@@ -55,7 +55,7 @@ ifdef PF_RING_HOME
 INCLUDES += -I$(PF_RING_HOME)/userland/lib -I$(PF_RING_HOME)/kernel
 endif
 ifdef USE_DPDK
-INCLUDES += -I"$(RTE_SDK)/build/include"
+INCLUDES += -I"/usr/include/dpdk"
 endif
 ifdef LIBPCAP_INLCUDE_DIR
 INCLUDES += -I"$(LIBPCAP_INLCUDE_DIR)"

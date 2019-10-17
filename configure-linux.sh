@@ -263,7 +263,7 @@ fi
 # function to extract DPDK major + minor version from <DPDK_HOM>/pkg/dpdk.spec file
 # return: DPDK version (major + minor only)
 function get_dpdk_version() {
-   echo $(grep "Version" $DPDK_HOME/pkg/dpdk.spec | cut -d' ' -f2 | cut -d'.' -f 1,2)
+   echo "17.11.3" 
 }
 
 # function to compare between 2 versions (each constructed of major + minor)

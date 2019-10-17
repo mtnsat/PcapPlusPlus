@@ -1,10 +1,10 @@
 ### DPDK ###
 
 # includes
-PCAPPP_INCLUDES += -I$(RTE_SDK)/build/include
+PCAPPP_INCLUDES += -I/usr/include/dpdk
 
 # libs dir
-PCAPPP_LIBS_DIR += -L$(RTE_SDK)/build/lib -L/lib64
+PCAPPP_LIBS_DIR += -L/lib64
 
 #flags
 PCAPPP_BUILD_FLAGS += -msse -msse2 -msse3 -Wall
