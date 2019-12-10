@@ -8,11 +8,12 @@
 #include "IpAddress.h"
 #include "Logger.h"
 #include <sstream>
+#include <vector>
 #if defined(WIN32) || defined(PCAPPP_MINGW_ENV) //for using ntohl, ntohs, etc.
 #include <winsock2.h>
 #elif LINUX
 #include <in.h> //for using ntohl, ntohs, etc.
-#elif MAC_OS_X
+#elif MAC_OS_X || FREEBSD
 #include <arpa/inet.h> //for using ntohl, ntohs, etc.
 #endif
 
@@ -67,62 +68,6 @@ void ConnectionData::copyData(const ConnectionData& other)
 	endTime = other.endTime;
 }
 
-
-TcpStreamData::TcpStreamData()
-{
-	m_Data = NULL;
-	m_DataLen = 0;
-	m_DeleteDataOnDestruction = false;
-}
-
-TcpStreamData::TcpStreamData(uint8_t* tcpData, size_t tcpDataLength, ConnectionData connData)
-{
-	m_Data = tcpData;
-	m_DataLen = tcpDataLength;
-	m_Connection = connData;
-	m_DeleteDataOnDestruction = true;
-}
-
-TcpStreamData::~TcpStreamData()
-{
-	if (m_DeleteDataOnDestruction && m_Data != NULL)
-	{
-		delete [] m_Data;
-	}
-}
-
-TcpStreamData::TcpStreamData(TcpStreamData& other)
-{
-	copyData(other);
-}
-
-TcpStreamData& TcpStreamData::operator=(const TcpStreamData& other)
-{
-	if (this == &other)
-		return *this;
-
-	if (m_DeleteDataOnDestruction && m_Data != NULL)
-		delete [] m_Data;
-
-	copyData(other);
-	return *this;
-}
-
-void TcpStreamData::copyData(const TcpStreamData& other)
-{
-	m_DataLen = other.m_DataLen;
-
-	if (other.m_Data != NULL)
-	{
-		m_Data = new uint8_t[m_DataLen];
-		memcpy(m_Data, other.m_Data, m_DataLen);
-	}
-	else
-		m_Data = NULL;
-
-	m_Connection = other.m_Connection;
-	m_DeleteDataOnDestruction = true;
-}
 
 void TcpReassembly::TcpOneSideData::setSrcIP(IPAddress* sourrcIP)
 {
@@ -191,7 +136,7 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 		return;
 	}
 
-	// calculate the TCP payload size
+	// set the TCP payload size
 	size_t tcpPayloadSize = tcpLayer->getLayerPayloadSize();
 
 	// calculate if this packet has FIN or RST flags
@@ -202,14 +147,6 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 	// ignore ACK packets or TCP packets with no payload (except for SYN, FIN or RST packets which we'll later need)
 	if (tcpPayloadSize == 0 && tcpLayer->getTcpHeader()->synFlag == 0 && !isFinOrRst)
 		return;
-
-	// if the actual TCP payload is smaller than the value written in IPV4's "total length" field then adjust tcpPayloadSize to avoid buffer overflow
-	if (tcpLayer->getLayerPayloadSize() < tcpPayloadSize)
-	{
-		LOG_DEBUG("Got a packet where actual TCP payload size is smaller then the value written in IPv4's 'total length' header. Adjusting tcpPayloadSize to avoid buffer overflow");
-		tcpPayloadSize = tcpLayer->getLayerPayloadSize();
-	}
-
 
 	TcpReassemblyData* tcpReassemblyData = NULL;
 
@@ -400,7 +337,6 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 		if (tcpPayloadSize != 0 && m_OnMessageReadyCallback != NULL)
 		{
 			TcpStreamData streamData(tcpLayer->getLayerPayload(), tcpPayloadSize, tcpReassemblyData->connData);
-			streamData.setDeleteDataOnDestruction(false);
 			m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
 		}
 
@@ -435,7 +371,6 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 			if (m_OnMessageReadyCallback != NULL)
 			{
 				TcpStreamData streamData(tcpLayer->getLayerPayload() + newLength, tcpPayloadSize - newLength, tcpReassemblyData->connData);
-				streamData.setDeleteDataOnDestruction(false);
 				m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
 			}
 		}
@@ -476,7 +411,6 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 		if (m_OnMessageReadyCallback != NULL)
 		{
 			TcpStreamData streamData(tcpLayer->getLayerPayload(), tcpPayloadSize, tcpReassemblyData->connData);
-			streamData.setDeleteDataOnDestruction(false);
 			m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
 		}
 
@@ -597,7 +531,6 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 						if (m_OnMessageReadyCallback != NULL)
 						{
 							TcpStreamData streamData(curTcpFrag->data, curTcpFrag->dataLength, tcpReassemblyData->connData);
-							streamData.setDeleteDataOnDestruction(false);
 							m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
 						}
 					}
@@ -633,7 +566,6 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 						if (m_OnMessageReadyCallback != NULL)
 						{
 							TcpStreamData streamData(curTcpFrag->data + newLength, curTcpFrag->dataLength - newLength, tcpReassemblyData->connData);
-							streamData.setDeleteDataOnDestruction(false);
 							m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
 						}
 
@@ -708,14 +640,13 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 
 					// add missing data text to the data that will be sent to the callback. This means that the data will look something like:
 					// "[xx bytes missing]<original_data>"
-					size_t dataWithMissingDataTextLen = missingDataTextStr.length() + curTcpFrag->dataLength;
-					uint8_t* dataWithMissingDataText = new uint8_t[dataWithMissingDataTextLen];
-					memcpy(dataWithMissingDataText, missingDataTextStr.c_str(), missingDataTextStr.length());
-					memcpy(dataWithMissingDataText + missingDataTextStr.length(), curTcpFrag->data, curTcpFrag->dataLength);
+					std::vector<uint8_t> dataWithMissingDataText;
+					dataWithMissingDataText.reserve(missingDataTextStr.length() + curTcpFrag->dataLength);
+					dataWithMissingDataText.insert(dataWithMissingDataText.end(), missingDataTextStr.begin(), missingDataTextStr.end());
+					dataWithMissingDataText.insert(dataWithMissingDataText.end(), curTcpFrag->data, curTcpFrag->data + curTcpFrag->dataLength);
 
 					//TcpStreamData streamData(curTcpFrag->data, curTcpFrag->dataLength, tcpReassemblyData->connData);
-					//streamData.setDeleteDataOnDestruction(false);
-					TcpStreamData streamData(dataWithMissingDataText, dataWithMissingDataTextLen, tcpReassemblyData->connData);
+					TcpStreamData streamData(&dataWithMissingDataText[0], dataWithMissingDataText.size(), tcpReassemblyData->connData);
 					m_OnMessageReadyCallback(sideIndex, streamData, m_UserCookie);
 
 					LOG_DEBUG("Found missing data on side %d: %d byte are missing. Sending the closest fragment which is in size %d + missing text message which size is %d",
@@ -784,7 +715,7 @@ void TcpReassembly::closeAllConnections()
 		if (iter->second == NULL) // the connection is already closed, skip it
 			continue;
 
-		TcpReassemblyData *tcpReassemblyData = iter->second;
+		TcpReassemblyData* tcpReassemblyData = iter->second;
 
 		uint32_t flowKey = tcpReassemblyData->connData.flowKey;
 		LOG_DEBUG("Closing connection with flow key 0x%X", flowKey);
