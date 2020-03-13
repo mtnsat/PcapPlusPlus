@@ -78,13 +78,13 @@ namespace pcpp
 		friend class PcapLiveDeviceList;
 	protected:
 		// This is a second descriptor for the same device. It is needed because of a bug
-		// that occurs in libpcap on Linux (on Windows using WinPcap it works well):
+		// that occurs in libpcap on Linux (on Windows using WinPcap/Npcap it works well):
 		// It's impossible to capture packets sent by the same descriptor
 		pcap_t* m_PcapSendDescriptor;
 		const char* m_Name;
 		const char* m_Description;
 		bool m_IsLoopback;
-		uint16_t m_DeviceMtu;
+		uint32_t m_DeviceMtu;
 		std::vector<pcap_addr_t> m_Addresses;
 		MacAddress m_MacAddress;
 		IPv4Address m_DefaultGateway;
@@ -129,9 +129,9 @@ namespace pcpp
 		{
 			/** libPcap live device */
 			LibPcapDevice,
-			/** WinPcap live device */
+			/** WinPcap/Npcap live device */
 			WinPcapDevice,
-			/** WinPcap Remote Capture device */
+			/** WinPcap/Npcap Remote Capture device */
 			RemoteDevice
 		};
 
@@ -209,7 +209,7 @@ namespace pcpp
 				this->mode = mode;
 				this->packetBufferTimeoutMs = packetBufferTimeoutMs;
 				this->packetBufferSize = packetBufferSize;
-				this->direction = PCPP_INOUT;
+				this->direction = direction;
 			}
 		};
 
@@ -220,7 +220,7 @@ namespace pcpp
 		virtual ~PcapLiveDevice();
 
 		/**
-		 * @return The type of the device (libPcap, WinPcap or a remote device)
+		 * @return The type of the device (libPcap, WinPcap/Npcap or a remote device)
 		 */
 		virtual LiveDeviceType getDeviceType() const { return LibPcapDevice; }
 
@@ -242,7 +242,7 @@ namespace pcpp
 		/**
 		 * @return The device's maximum transmission unit (MTU) in bytes
 		 */
-		virtual uint16_t getMtu() const { return m_DeviceMtu; }
+		virtual uint32_t getMtu() const { return m_DeviceMtu; }
 
 		/**
 		 * @return The device's link layer type
@@ -392,7 +392,7 @@ namespace pcpp
 		 * - Device is not opened
 		 * - Packet length is 0
 		 * - Packet length is larger than device MTU
-		 * - Packet could not be sent due to some error in libpcap/WinPcap
+		 * - Packet could not be sent due to some error in libpcap/WinPcap/Npcap
 		 */
 		bool sendPacket(RawPacket const& rawPacket);
 
@@ -404,7 +404,7 @@ namespace pcpp
 		 * - Device is not opened
 		 * - Packet length is 0
 		 * - Packet length is larger than device MTU
-		 * - Packet could not be sent due to some error in libpcap/WinPcap
+		 * - Packet could not be sent due to some error in libpcap/WinPcap/Npcap
 		 */
 		bool sendPacket(const uint8_t* packetData, int packetDataLength);
 
@@ -415,7 +415,7 @@ namespace pcpp
 		 * - Device is not opened
 		 * - Packet length is 0
 		 * - Packet length is larger than device MTU
-		 * - Packet could not be sent due to some error in libpcap/WinPcap
+		 * - Packet could not be sent due to some error in libpcap/WinPcap/Npcap
 		 */
 		bool sendPacket(Packet* packet);
 
@@ -428,7 +428,7 @@ namespace pcpp
 		 * - Device is not opened. In this case no packets will be sent, return value will be 0
 		 * - Packet length is 0
 		 * - Packet length is larger than device MTU
-		 * - Packet could not be sent due to some error in libpcap/WinPcap
+		 * - Packet could not be sent due to some error in libpcap/WinPcap/Npcap
 		 */
 		virtual int sendPackets(RawPacket* rawPacketsArr, int arrLength);
 
@@ -441,7 +441,7 @@ namespace pcpp
 		 * - Device is not opened. In this case no packets will be sent, return value will be 0
 		 * - Packet length is 0
 		 * - Packet length is larger than device MTU
-		 * - Packet could not be sent due to some error in libpcap/WinPcap
+		 * - Packet could not be sent due to some error in libpcap/WinPcap/Npcap
 		 */
 		virtual int sendPackets(Packet** packetsArr, int arrLength);
 
@@ -453,7 +453,7 @@ namespace pcpp
 		 * - Device is not opened. In this case no packets will be sent, return value will be 0
 		 * - Packet length is 0
 		 * - Packet length is larger than device MTU
-		 * - Packet could not be sent due to some error in libpcap/WinPcap
+		 * - Packet could not be sent due to some error in libpcap/WinPcap/Npcap
 		 */
 		virtual int sendPackets(const RawPacketVector& rawPackets);
 

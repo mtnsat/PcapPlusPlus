@@ -9,15 +9,28 @@
 #include "Logger.h"
 #include <sstream>
 #include <vector>
-#if defined(WIN32) || defined(PCAPPP_MINGW_ENV) //for using ntohl, ntohs, etc.
-#include <winsock2.h>
-#elif LINUX
-#include <in.h> //for using ntohl, ntohs, etc.
-#elif MAC_OS_X || FREEBSD
-#include <arpa/inet.h> //for using ntohl, ntohs, etc.
+#include "EndianPortable.h"
+#include "TimespecTimeval.h"
+#ifdef _MSC_VER
+#include <time.h>
 #endif
 
 #define PURGE_FREQ_SECS 1
+
+#define SEQ_LT(a,b)  ((int32_t)((a)-(b)) < 0)
+#define SEQ_LEQ(a,b) ((int32_t)((a)-(b)) <= 0)
+#define SEQ_GT(a,b)  ((int32_t)((a)-(b)) > 0)
+#define SEQ_GEQ(a,b) ((int32_t)((a)-(b)) >= 0)
+
+namespace
+{
+	timeval timespec_to_timeval(const timespec &in)
+	{
+		timeval out;
+		TIMESPEC_TO_TIMEVAL(&out, &in);
+		return out;
+	}
+}
 
 namespace pcpp
 {
@@ -103,7 +116,7 @@ TcpReassembly::~TcpReassembly()
 void TcpReassembly::reassemblePacket(Packet& tcpData)
 {
 	// automatic cleanup
-	if(m_RemoveConnInfo == true)
+	if (m_RemoveConnInfo == true)
 	{
 		if(time(NULL) >= m_PurgeTimepoint)
 		{
@@ -123,12 +136,12 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 		return;
 
 	// Ignore non-TCP packets
-	TcpLayer* tcpLayer = tcpData.getLayerOfType<TcpLayer>();
+	TcpLayer* tcpLayer = tcpData.getLayerOfType<TcpLayer>(true); // lookup in reverse order
 	if (tcpLayer == NULL)
 		return;
 
 	// Ignore the packet if it's an ICMP packet that has a TCP layer
-    // Several ICMP messages (like "destination unreachable") have TCP data as part of the ICMP message.
+	// Several ICMP messages (like "destination unreachable") have TCP data as part of the ICMP message.
 	// This is not real TCP data and packet can be ignored
 	if (tcpData.isPacketOfType(ICMP))
 	{
@@ -192,10 +205,10 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 		tcpReassemblyData = new TcpReassemblyData();
 		tcpReassemblyData->connData.setSrcIpAddress(srcIP);
 		tcpReassemblyData->connData.setDstIpAddress(dstIP);
-		tcpReassemblyData->connData.srcPort = ntohs(tcpLayer->getTcpHeader()->portSrc);
-		tcpReassemblyData->connData.dstPort = ntohs(tcpLayer->getTcpHeader()->portDst);
+		tcpReassemblyData->connData.srcPort = be16toh(tcpLayer->getTcpHeader()->portSrc);
+		tcpReassemblyData->connData.dstPort = be16toh(tcpLayer->getTcpHeader()->portDst);
 		tcpReassemblyData->connData.flowKey = flowKey;
-		timeval ts = tcpData.getRawPacket()->getPacketTimeStamp();
+		timeval ts = timespec_to_timeval(tcpData.getRawPacket()->getPacketTimeStamp());
 		tcpReassemblyData->connData.setStartTime(ts);
 
 		m_ConnectionList[flowKey] = tcpReassemblyData;
@@ -208,7 +221,7 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 	else // connection already exists
 	{
 		tcpReassemblyData = iter->second;
-		timeval currTime = tcpData.getRawPacket()->getPacketTimeStamp();
+		timeval currTime = timespec_to_timeval(tcpData.getRawPacket()->getPacketTimeStamp());
 		if (currTime.tv_sec > tcpReassemblyData->connData.endTime.tv_sec)
 		{
 			tcpReassemblyData->connData.setEndTime(currTime); 
@@ -321,7 +334,7 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 	tcpReassemblyData->prevSide = sideIndex;
 
 	// extract sequence value from packet
-	uint32_t sequence = ntohl(tcpLayer->getTcpHeader()->sequenceNumber);
+	uint32_t sequence = be32toh(tcpLayer->getTcpHeader()->sequenceNumber);
 
 	// if it's the first packet we see on this side of the connection
 	if (first)
@@ -349,7 +362,7 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 	}
 
 	// if packet sequence is smaller than expected - this means that part or all of the TCP data is being re-transmitted
-	if (sequence < tcpReassemblyData->twoSides[sideIndex].sequence)
+	if (SEQ_LT(sequence, tcpReassemblyData->twoSides[sideIndex].sequence))
 	{
 		LOG_DEBUG("Found new data with the sequence lower than expected");
 
@@ -357,7 +370,7 @@ void TcpReassembly::reassemblePacket(Packet& tcpData)
 		uint32_t newSequence = sequence + tcpPayloadSize;
 
 		// this means that some of payload is new
-		if (newSequence > tcpReassemblyData->twoSides[sideIndex].sequence)
+		if (SEQ_GT(newSequence, tcpReassemblyData->twoSides[sideIndex].sequence))
 		{
 			// calculate the size of the new data
 			uint32_t newLength = tcpReassemblyData->twoSides[sideIndex].sequence - sequence;
@@ -545,13 +558,13 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 				}
 
 				// if fragment sequence has lower sequence than the current sequence
-				if (curTcpFrag->sequence < tcpReassemblyData->twoSides[sideIndex].sequence)
+				if (SEQ_LT(curTcpFrag->sequence, tcpReassemblyData->twoSides[sideIndex].sequence))
 				{
 					// check if it still has new data
 					uint32_t newSequence = curTcpFrag->sequence + curTcpFrag->dataLength;
 
 					// it has new data
-					if (newSequence > tcpReassemblyData->twoSides[sideIndex].sequence)
+					if (SEQ_GT(newSequence, tcpReassemblyData->twoSides[sideIndex].sequence))
 					{
 						// calculate the delta new data size
 						uint32_t newLength = tcpReassemblyData->twoSides[sideIndex].sequence - curTcpFrag->sequence;
@@ -601,6 +614,7 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 		// Search for the fragment with the closest sequence to the current one
 
 		uint32_t closestSequence = 0xffffffff;
+		bool closestSequenceDefined = false;
 		int closestSequenceFragIndex = -1;
 		index = 0;
 
@@ -610,10 +624,11 @@ void TcpReassembly::checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyDat
 			TcpFragment* curTcpFrag = tcpReassemblyData->twoSides[sideIndex].tcpFragmentList.at(index);
 
 			// check if its sequence is closer than current closest sequence
-			if (curTcpFrag->sequence < closestSequence)
+			if (!closestSequenceDefined || SEQ_LT(curTcpFrag->sequence, closestSequence))
 			{
 				closestSequence = curTcpFrag->sequence;
 				closestSequenceFragIndex = index;
+				closestSequenceDefined = true;
 			}
 
 			index++;
@@ -753,9 +768,9 @@ void TcpReassembly::insertIntoCleanupList(uint32_t flowKey)
 	// otherwise this method returns an iterator to the element that prevents insertion.
 	std::pair<CleanupList::iterator, bool> pair = m_CleanupList.insert(std::make_pair(time(NULL) + m_ClosedConnectionDelay, CleanupList::mapped_type()));
 
-	// dereferencing of map iterator and getting the reference to list
-	CleanupList::mapped_type &keysList = pair.first->second;
-	keysList.push_back(flowKey);
+	// getting the reference to list
+	CleanupList::mapped_type& keysList = pair.first->second;
+	keysList.push_front(flowKey);
 }
 
 uint32_t TcpReassembly::purgeClosedConnections(uint32_t maxNumToClean)
@@ -768,14 +783,14 @@ uint32_t TcpReassembly::purgeClosedConnections(uint32_t maxNumToClean)
 	CleanupList::iterator iterTime = m_CleanupList.begin(), iterTimeEnd = m_CleanupList.upper_bound(time(NULL));
 	while(iterTime != iterTimeEnd && count < maxNumToClean)
 	{
-		CleanupList::mapped_type &keysList = iterTime->second;
-		CleanupList::mapped_type::iterator iterKey = keysList.begin(), iterKeyEnd = keysList.end();
+		CleanupList::mapped_type& keysList = iterTime->second;
 
-		for(; iterKey != iterKeyEnd && count < maxNumToClean; ++count)
+		for (; !keysList.empty() && count < maxNumToClean; ++count)
 		{
-			m_ConnectionInfo.erase(*iterKey);
-			m_ConnectionList.erase(*iterKey);
-			keysList.erase(iterKey++);
+			const CleanupList::mapped_type::reference key = keysList.front();
+			m_ConnectionInfo.erase(key);
+			m_ConnectionList.erase(key);
+			keysList.pop_front();
 		}
 
 		if(keysList.empty())

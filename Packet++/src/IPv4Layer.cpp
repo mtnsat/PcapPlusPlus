@@ -12,6 +12,7 @@
 #include <sstream>
 #include "IpUtils.h"
 #include "Logger.h"
+#include "EndianPortable.h"
 
 namespace pcpp
 {
@@ -94,7 +95,7 @@ IPv4OptionBuilder::IPv4OptionBuilder(const IPv4TimestampOptionValue& timestampVa
 	int firstZero = -1;
 	for (int i = 0; i < (int)timestampValue.timestamps.size(); i++)
 	{
-		uint32_t timestamp = htonl(timestampValue.timestamps.at(i));
+		uint32_t timestamp = htobe32(timestampValue.timestamps.at(i));
 
 		// for pointer calculation - find the first timestamp equals to 0
 		if (timestamp == 0 && firstZero == -1)
@@ -181,7 +182,7 @@ void IPv4Layer::initLayerInPacket(uint8_t* data, size_t dataLen, Layer* prevLaye
 	m_TempHeaderExtension = 0;
 	if (setTotalLenAsDataLen)
 	{
-		size_t totalLen = ntohs(getIPv4Header()->totalLength);
+		size_t totalLen = be16toh(getIPv4Header()->totalLength);
 		// if totalLen == 0 this usually means TCP Segmentation Offload (TSO). In this case we should ignore the value of totalLen
 		// and look at the data captured on the wire
 		if ((totalLen < m_DataLen) && (totalLen !=0))
@@ -261,21 +262,22 @@ void IPv4Layer::parseNextLayer()
 	switch (ipHdr->protocol)
 	{
 	case PACKETPP_IPPROTO_UDP:
-		if (m_DataLen - hdrLen >= sizeof(udphdr))
+		if (payloadLen >= sizeof(udphdr))
 			m_NextLayer = new UdpLayer(payload, payloadLen, this, m_Packet);
 		break;
 	case PACKETPP_IPPROTO_TCP:
-		if (m_DataLen - hdrLen >= sizeof(tcphdr))
-			m_NextLayer = new TcpLayer(payload, payloadLen, this, m_Packet);
+		m_NextLayer = TcpLayer::isDataValid(payload, payloadLen)
+			? static_cast<Layer*>(new TcpLayer(payload, payloadLen, this, m_Packet))
+			: static_cast<Layer*>(new PayloadLayer(payload, payloadLen, this, m_Packet));
 		break;
 	case PACKETPP_IPPROTO_ICMP:
 		m_NextLayer = new IcmpLayer(payload, payloadLen, this, m_Packet);
 		break;
 	case PACKETPP_IPPROTO_IPIP:
-		ipVersion = *(m_Data + hdrLen);
-		if (ipVersion >> 4 == 4)
+		ipVersion = *payload >> 4;
+		if (ipVersion == 4)
 			m_NextLayer = new IPv4Layer(payload, payloadLen, this, m_Packet);
-		else if (ipVersion >> 4 == 6)
+		else if (ipVersion == 6)
 			m_NextLayer = new IPv6Layer(payload, payloadLen, this, m_Packet);
 		else
 			m_NextLayer = new PayloadLayer(payload, payloadLen, this, m_Packet);
@@ -290,7 +292,7 @@ void IPv4Layer::parseNextLayer()
 			m_NextLayer = new PayloadLayer(payload, payloadLen, this, m_Packet);
 		break;
 	case PACKETPP_IPPROTO_IGMP:
-		igmpVer = IgmpLayer::getIGMPVerFromData(payload, ntohs(getIPv4Header()->totalLength) - hdrLen, igmpQuery);
+		igmpVer = IgmpLayer::getIGMPVerFromData(payload, be16toh(getIPv4Header()->totalLength) - hdrLen, igmpQuery);
 		if (igmpVer == IGMPv1)
 			m_NextLayer = new IgmpV1Layer(payload, payloadLen, this, m_Packet);
 		else if (igmpVer == IGMPv2)
@@ -314,7 +316,7 @@ void IPv4Layer::computeCalculateFields()
 {
 	iphdr* ipHdr = getIPv4Header();
 	ipHdr->ipVersion = (4 & 0x0f);
-	ipHdr->totalLength = htons(m_DataLen);
+	ipHdr->totalLength = htobe16(m_DataLen);
 	ipHdr->headerChecksum = 0;
 
 	if (m_NextLayer != NULL)
@@ -345,7 +347,7 @@ void IPv4Layer::computeCalculateFields()
 	}
 
 	ScalarBuffer<uint16_t> scalar = { (uint16_t*)ipHdr, (size_t)(ipHdr->internetHeaderLength*4) } ;
-	ipHdr->headerChecksum = htons(compute_checksum(&scalar, 1));
+	ipHdr->headerChecksum = htobe16(compute_checksum(&scalar, 1));
 }
 
 bool IPv4Layer::isFragment() const
@@ -370,7 +372,7 @@ uint8_t IPv4Layer::getFragmentFlags() const
 
 uint16_t IPv4Layer::getFragmentOffset() const
 {
-	return ntohs(getIPv4Header()->fragmentOffset & (uint16_t)0xFF1F) * 8;
+	return be16toh(getIPv4Header()->fragmentOffset & (uint16_t)0xFF1F) * 8;
 }
 
 std::string IPv4Layer::toString() const
@@ -553,19 +555,6 @@ bool IPv4Layer::removeAllOptions()
 	m_NumOfTrailingBytes = 0;
 	m_OptionReader.changeTLVRecordCount(0 - getOptionCount());
 	return true;
-}
-
-bool IPv4Layer::isDataValid(const uint8_t* data, size_t dataLen)
-{
-	if (dataLen >= 20)
-	{
-		const iphdr* hdr = reinterpret_cast<const iphdr*>(data);
-
-		return hdr->ipVersion == 4
-			&& hdr->internetHeaderLength >= 5
-			&& ntohs(hdr->totalLength) <= 65535;
-	}
-	return false;
 }
 
 } // namespace pcpp

@@ -2,6 +2,7 @@
 
 #include "Packet.h"
 #include "EthLayer.h"
+#include "EthDot3Layer.h"
 #include "SllLayer.h"
 #include "NullLoopbackLayer.h"
 #include "IPv4Layer.h"
@@ -9,6 +10,7 @@
 #include "PayloadLayer.h"
 #include "PacketTrailerLayer.h"
 #include "Logger.h"
+#include "EndianPortable.h"
 #include <string.h>
 #include <typeinfo>
 #include <sstream>
@@ -33,7 +35,7 @@ Packet::Packet(size_t maxPacketLen) :
 	gettimeofday(&time, NULL);
 	uint8_t* data = new uint8_t[maxPacketLen];
 	memset(data, 0, maxPacketLen);
-	m_RawPacket = new RawPacket((const uint8_t*)data, 0, time, true, LINKTYPE_ETHERNET);
+	m_RawPacket = new RawPacket(data, 0, time, true, LINKTYPE_ETHERNET);
 }
 
 void Packet::setRawPacket(RawPacket* rawPacket, bool freeRawPacket, ProtocolType parseUntil, OsiModelLayer parseUntilLayer)
@@ -123,11 +125,6 @@ Packet::Packet(RawPacket* rawPacket, OsiModelLayer parseUntilLayer)
 	setRawPacket(rawPacket, false, UnknownProtocol, parseUntilLayer);
 }
 
-Packet::Packet(const Packet& other)
-{
-	copyDataFrom(other);
-}
-
 void Packet::destructPacketData()
 {
 	Layer* curLayer = m_FirstLayer;
@@ -198,11 +195,6 @@ void Packet::reallocateRawData(size_t newSize)
 		dataPtr += curLayer->getHeaderLen();
 		curLayer = curLayer->getNextLayer();
 	}
-}
-
-bool Packet::addLayer(Layer* newLayer, bool ownInPacket)
-{
-	return insertLayer(m_LastLayer, newLayer, ownInPacket);
 }
 
 bool Packet::insertLayer(Layer* prevLayer, Layer* newLayer, bool ownInPacket)
@@ -379,11 +371,6 @@ Layer* Packet::detachLayer(ProtocolType layerType, int index)
 		LOG_ERROR("Layer of the requested type was not found in packet");
 		return NULL;
 	}
-}
-
-bool Packet::detachLayer(Layer* layer)
-{
-	return removeLayer(layer, false);
 }
 
 bool Packet::removeLayer(Layer* layer, bool tryToDelete)
@@ -644,18 +631,13 @@ void Packet::computeCalculateFields()
 	}
 }
 
-Packet::~Packet()
-{
-	destructPacketData();
-}
-
 std::string Packet::printPacketInfo(bool timeAsLocalTime) const
 {
 	std::ostringstream dataLenStream;
 	dataLenStream << m_RawPacket->getRawDataLen();
 
 	// convert raw packet timestamp to printable format
-	timeval timestamp = m_RawPacket->getPacketTimeStamp();
+	timespec timestamp = m_RawPacket->getPacketTimeStamp();
 	time_t nowtime = timestamp.tv_sec;
 	struct tm *nowtm = NULL;
 	if (timeAsLocalTime)
@@ -667,10 +649,10 @@ std::string Packet::printPacketInfo(bool timeAsLocalTime) const
 	if (nowtm != NULL)
 	{
 		strftime(tmbuf, sizeof(tmbuf), "%Y-%m-%d %H:%M:%S", nowtm);
-		snprintf(buf, sizeof(buf), "%s.%06lu", tmbuf, (unsigned long)timestamp.tv_usec);
+		snprintf(buf, sizeof(buf), "%s.%09lu", tmbuf, (unsigned long)timestamp.tv_nsec);
 	}
 	else
-		snprintf(buf, sizeof(buf), "0000-00-00 00:00:00.000000");
+		snprintf(buf, sizeof(buf), "0000-00-00 00:00:00.000000000");
 	
 	return "Packet length: " + dataLenStream.str() + " [Bytes], Arrival time: " + std::string(buf);
 }
@@ -679,7 +661,25 @@ Layer* Packet::createFirstLayer(LinkLayerType linkType)
 {
 	if (linkType == LINKTYPE_ETHERNET)
 	{
-		return new EthLayer((uint8_t*)m_RawPacket->getRawData(), m_RawPacket->getRawDataLen(), this);
+		// In order to distinguish between Ethernet II and IEEE 802.3 Ethernet the common method is
+		// to check the length field. In IEEE 802.3 Ethernet the length value should be equal or 
+		// less than 0x5DC which corresponds to 1500 bytes. If the value is larger than 0x5DC
+		// it means the value is an Ether Type which belongs to Ethernet II.
+		// You can read more in this link:
+		// https://www.ibm.com/support/pages/ethernet-version-2-versus-ieee-8023-ethernet
+
+		size_t rawDataLen = (size_t)m_RawPacket->getRawDataLen();
+		const uint8_t* rawData = m_RawPacket->getRawData();
+		if (rawDataLen >= sizeof(ether_header))
+		{
+			uint16_t ethTypeOrLength = be16toh(*(uint16_t*)(rawData + 12));
+			if (ethTypeOrLength <= (uint16_t)0x5dc && ethTypeOrLength != 0)
+			{
+				return new EthDot3Layer((uint8_t*)rawData, rawDataLen, this);
+			}
+		}
+		
+		return new EthLayer((uint8_t*)rawData, rawDataLen, this);
 	}
 	else if (linkType == LINKTYPE_LINUX_SLL)
 	{
@@ -717,7 +717,7 @@ std::string Packet::toString(bool timeAsLocalTime)
 	toStringList(stringList, timeAsLocalTime);
 	for (std::vector<std::string>::iterator iter = stringList.begin(); iter != stringList.end(); iter++)
 	{
-		result += *iter + "\n";
+		result += *iter + '\n';
 	}
 
 	return result;

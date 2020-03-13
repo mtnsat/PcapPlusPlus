@@ -10,25 +10,8 @@
 namespace pcpp
 {
 
-static std::map<uint16_t, bool> createHTTPPortMap()
-{
-	std::map<uint16_t, bool> result;
-	result[80] = true;
-	result[8080] = true;
-	return result;
-}
-
-static const std::map<uint16_t, bool> HTTPPortMap = createHTTPPortMap();
-
-
-
 
 // -------- Class HttpMessage -----------------
-
-const std::map<uint16_t, bool>* HttpMessage::getHTTPPortMap()
-{
-	return &HTTPPortMap;
-}
 
 
 HeaderField* HttpMessage::addField(const std::string& fieldName, const std::string& fieldValue)
@@ -927,7 +910,7 @@ HttpResponseLayer::HttpResponseStatusCode HttpResponseFirstLine::parseStatusCode
 			case '4':
 				return validateStatusCode(statusCodeData+3, statusCodeDataLen-3, HttpResponseLayer::Http204NoContent);
 			case '5':
-				return validateStatusCode(statusCodeData+3, statusCodeDataLen-3, HttpResponseLayer::http205ResetContent);
+				return validateStatusCode(statusCodeData+3, statusCodeDataLen-3, HttpResponseLayer::Http205ResetContent);
 			case '6':
 				return validateStatusCode(statusCodeData+3, statusCodeDataLen-3, HttpResponseLayer::Http206PartialContent);
 			case '7':

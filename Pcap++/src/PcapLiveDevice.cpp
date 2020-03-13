@@ -15,6 +15,12 @@
 #include <fstream>
 #include <sstream>
 #if defined(WIN32) || defined(WINx64) || defined(PCAPPP_MINGW_ENV)
+// The definition of BPF_MAJOR_VERSION is required to support Npcap. In Npcap there are 
+// compilation errors due to struct redefinition when including both Packet32.h and pcap.h
+// This define statement eliminates these errors
+#ifndef BPF_MAJOR_VERSION
+#define BPF_MAJOR_VERSION 1
+#endif // BPF_MAJOR_VERSION
 #include <ws2tcpip.h>
 #include <Packet32.h>
 #include <ntddndis.h>
@@ -23,7 +29,7 @@
 #include <arpa/inet.h>
 #include <sys/ioctl.h>
 #include <net/if.h>
-#endif
+#endif // if defined(WIN32) || defined(WINx64) || defined(PCAPPP_MINGW_ENV)
 #if defined(MAC_OS_X) || defined(FREEBSD)
 #include <net/if_dl.h>
 #include <sys/sysctl.h>
@@ -100,7 +106,7 @@ PcapLiveDevice::PcapLiveDevice(pcap_if_t* pInterface, bool calculateMTU, bool ca
 	if (calculateMTU)
 	{
 		setDeviceMtu();
-		LOG_DEBUG("   MTU: %d", m_DeviceMtu);
+		LOG_DEBUG("   MTU: %d", (int)m_DeviceMtu);
 	}
 
 	if (calculateDefaultGateway)
@@ -576,9 +582,9 @@ bool PcapLiveDevice::sendPacket(const uint8_t* packetData, int packetDataLength)
 		return false;
 	}
 
-	if (packetDataLength > m_DeviceMtu)
+	if (packetDataLength > (int)m_DeviceMtu)
 	{
-		LOG_ERROR("Packet length [%d] is larger than device MTU [%d]\n", packetDataLength, m_DeviceMtu);
+		LOG_ERROR("Packet length [%d] is larger than device MTU [%d]\n", packetDataLength, (int)m_DeviceMtu);
 		return false;
 	}
 
@@ -658,8 +664,8 @@ void PcapLiveDevice::setDeviceMtu()
 
 	if (m_IsLoopback)
 	{
-		LOG_DEBUG("Npcap Loopback Adapter - MTU is insignificant, setting MTU to max value (0xffff)");
-		m_DeviceMtu = 0xffff;
+		LOG_DEBUG("Npcap Loopback Adapter - MTU is insignificant, setting MTU to max value (0xffffffff)");
+		m_DeviceMtu = 0xffffffff;
 		return;
 	}
 

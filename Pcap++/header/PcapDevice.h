@@ -29,7 +29,7 @@ namespace pcpp
 
 	/**
 	 * @class IPcapDevice
-	 * An abstract class representing all libpcap-based packet capturing devices: files, libPcap, WinPcap and RemoteCapture.
+	 * An abstract class representing all libpcap-based packet capturing devices: files, libPcap, WinPcap/Npcap and RemoteCapture.
 	 * This class is abstract and cannot be instantiated
 	 */
 	class IPcapDevice : public IDevice, public IFilterableDevice
@@ -47,7 +47,7 @@ namespace pcpp
 		 * Get statistics from device:
 		 * - pcap_stat#ps_recv: number of packets received
 		 * - pcap_stat#ps_drop: number of packets dropped
-		 * - pcap_stat#ps_ifdorp: number of packets dropped by interface
+		 * - pcap_stat#ps_ifdrop: number of packets dropped by interface
 		 * @param[out] stats The stats struct where stats are returned
 		 */
 		virtual void getStatistics(pcap_stat& stats) const = 0;
@@ -96,7 +96,9 @@ namespace pcpp
 		using IFilterableDevice::setFilter;
 
 		/**
-		 * Set a filter for the device. When implemented by the device, only packets that match the filter will be received
+		 * Set a filter for the device. When implemented by the device, only packets that match the filter will be received.
+		 * Please note that when the device is closed the filter is reset so when reopening the device you need to call this 
+		 * method again in order to reactivate the filter
 		 * @param[in] filterAsString The filter to be set in Berkeley Packet Filter (BPF) syntax (http://biot.com/capstats/bpf.html)
 		 * @return True if filter set successfully, false otherwise
 		 */
