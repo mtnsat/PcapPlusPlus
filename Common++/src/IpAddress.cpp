@@ -73,6 +73,17 @@ IPv4Address::IPv4Address(uint32_t addressAsInt)
 		m_IsValid = true;
 }
 
+IPv4Address::IPv4Address(uint8_t oct1, uint8_t oct2, uint8_t oct3, uint8_t oct4)
+{
+	m_pInAddr = new in_addr();
+	uint8_t octArr[4] = { oct1, oct2, oct3, oct4 };
+	memcpy(m_pInAddr, octArr, 4*sizeof(uint8_t));
+	if (inet_ntop(AF_INET, m_pInAddr, m_AddressAsString, MAX_ADDR_STRING_LEN) == 0)
+		m_IsValid = false;
+	else
+		m_IsValid = true;
+}
+
 IPv4Address::IPv4Address(in_addr* inAddr)
 {
 	m_pInAddr = new in_addr();
@@ -121,6 +132,14 @@ uint32_t IPv4Address::toInt() const
 {
 	uint32_t result;
 	memcpy(&result, m_pInAddr, sizeof(uint32_t));
+	return result;
+}
+
+IPv4Address::ipv4_octets IPv4Address::toOctets() const
+{
+	uint8_t byteArr[4];
+	memcpy(byteArr, m_pInAddr, 4*sizeof(uint8_t));
+	IPv4Address::ipv4_octets result = { byteArr[0], byteArr[1], byteArr[2], byteArr[3] };
 	return result;
 }
 

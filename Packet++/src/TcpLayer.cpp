@@ -8,6 +8,7 @@
 #include "HttpLayer.h"
 #include "SSLLayer.h"
 #include "SipLayer.h"
+#include "BgpLayer.h"
 #include "IpUtils.h"
 #include "Logger.h"
 #include <string.h>
@@ -337,8 +338,8 @@ void TcpLayer::parseNextLayer()
 	uint8_t* payload = m_Data + headerLen;
 	size_t payloadLen = m_DataLen - headerLen;
 	tcphdr* tcpHder = getTcpHeader();
-	uint16_t portDst = ntohs(tcpHder->portDst);
-	uint16_t portSrc = ntohs(tcpHder->portSrc);
+	uint16_t portDst = be16toh(tcpHder->portDst);
+	uint16_t portSrc = be16toh(tcpHder->portSrc);
 
 	if (HttpMessage::isHttpPort(portDst) && HttpRequestFirstLine::parseMethod((char*)payload, payloadLen) != HttpRequestLayer::HttpMethodUnknown)
 		m_NextLayer = new HttpRequestLayer(payload, payloadLen, this, m_Packet);
@@ -355,6 +356,8 @@ void TcpLayer::parseNextLayer()
 		else
 			m_NextLayer = new PayloadLayer(payload, payloadLen, this, m_Packet);
 	}
+	else if (BgpLayer::isBgpPort(portSrc, portDst))
+		m_NextLayer = BgpLayer::parseBgpLayer(payload, payloadLen, this, m_Packet);
 	else
 		m_NextLayer = new PayloadLayer(payload, payloadLen, this, m_Packet);
 }
@@ -389,9 +392,9 @@ std::string TcpLayer::toString() const
 		result += "[ACK], ";
 
 	std::ostringstream srcPortStream;
-	srcPortStream << ntohs(hdr->portSrc);
+	srcPortStream << be16toh(hdr->portSrc);
 	std::ostringstream dstPortStream;
-	dstPortStream << ntohs(hdr->portDst);
+	dstPortStream << be16toh(hdr->portDst);
 	result += "Src port: " + srcPortStream.str() + ", Dst port: " + dstPortStream.str();
 
 	return result;

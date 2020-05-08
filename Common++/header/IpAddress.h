@@ -122,12 +122,38 @@ namespace pcpp
 		in_addr* m_pInAddr;
 		void init(const char* addressAsString);
 	public:
+
+		/**
+		 * A struct to represent the 4 octets in an IPv4 address.
+		 * It's almost the same as the struct in_addr, but a little simpler and has no external dependencies
+		 */
+		struct ipv4_octets
+		{
+			/** Octet 1 */
+			uint8_t oct1;
+			/** Octet 2 */
+			uint8_t oct2;
+			/** Octet 3 */
+			uint8_t oct3;
+			/** Octet 4 */
+			uint8_t oct4;
+		};
+
 		/**
 		 * A constructor that creates an instance of the class out of 4-byte integer value
 		 * @todo consider endianess in this method
 		 * @param[in] addressAsInt The address as 4-byte integer
 		 */
 		IPv4Address(uint32_t addressAsInt);
+
+		/**
+		 * A constructor that creates an instance of the class out of four 1-byte octets
+		 * @param[in] oct1 First octet
+		 * @param[in] oct2 Second octet
+		 * @param[in] oct3 Third octet
+		 * @param[in] oct4 Fourth octet
+		 */
+		IPv4Address(uint8_t oct1, uint8_t oct2, uint8_t oct3, uint8_t oct4);
 
 		/**
 		 * A constructor that creates an instance of the class out of string (char*) value
@@ -170,10 +196,14 @@ namespace pcpp
 		uint32_t toInt() const;
 
 		/**
-		 * Returns a in_addr struct pointer representing the IPv4 address
 		 * @return a in_addr struct pointer representing the IPv4 address
 		 */
 		in_addr* toInAddr() const { return m_pInAddr; }
+
+		/**
+		 * @return The 4 octets of the IPv4 address, e.g: "10.11.12.13" => [10], [11], [12], [13]
+		 */
+		IPv4Address::ipv4_octets toOctets() const;
 
 		/**
 		 * Overload of the comparison operator

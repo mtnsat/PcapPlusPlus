@@ -103,8 +103,8 @@
       <SubSystem>Windows</SubSystem>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.lib" "$(PcapPlusPlusHome)\Dist\" /F /R /Y /I
-xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.pdb" "$(PcapPlusPlusHome)\Dist\" /F /R /Y /I
+      <Command>xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.lib" "$(PcapPlusPlusHome)\Dist\$(Platform)\$(Configuration)\" /F /R /Y /I
+xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.pdb" "$(PcapPlusPlusHome)\Dist\$(Platform)\$(Configuration)\" /F /R /Y /I
 xcopy "$(PcapPlusPlusHome)\Packet++\header\*" "$(PcapPlusPlusHome)\Dist\header" /F /R /Y /I</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -125,8 +125,8 @@ xcopy "$(PcapPlusPlusHome)\Packet++\header\*" "$(PcapPlusPlusHome)\Dist\header" 
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.lib" "$(PcapPlusPlusHome)\Dist\" /F /R /Y /I
-xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.pdb" "$(PcapPlusPlusHome)\Dist\" /F /R /Y /I
+      <Command>xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.lib" "$(PcapPlusPlusHome)\Dist\$(Platform)\$(Configuration)\" /F /R /Y /I
+xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.pdb" "$(PcapPlusPlusHome)\Dist\$(Platform)\$(Configuration)\" /F /R /Y /I
 xcopy "$(PcapPlusPlusHome)\Packet++\header\*" "$(PcapPlusPlusHome)\Dist\header" /F /R /Y /I</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -144,8 +144,8 @@ xcopy "$(PcapPlusPlusHome)\Packet++\header\*" "$(PcapPlusPlusHome)\Dist\header" 
       <SubSystem>Windows</SubSystem>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.lib" "$(PcapPlusPlusHome)\Dist\" /F /R /Y /I
-xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.pdb" "$(PcapPlusPlusHome)\Dist\" /F /R /Y /I
+      <Command>xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.lib" "$(PcapPlusPlusHome)\Dist\$(Platform)\$(Configuration)\" /F /R /Y /I
+xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.pdb" "$(PcapPlusPlusHome)\Dist\$(Platform)\$(Configuration)\" /F /R /Y /I
 xcopy "$(PcapPlusPlusHome)\Packet++\header\*" "$(PcapPlusPlusHome)\Dist\header" /F /R /Y /I</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -166,13 +166,14 @@ xcopy "$(PcapPlusPlusHome)\Packet++\header\*" "$(PcapPlusPlusHome)\Dist\header" 
       <OptimizeReferences>true</OptimizeReferences>
     </Link>
     <PostBuildEvent>
-      <Command>xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.lib" "$(PcapPlusPlusHome)\Dist\" /F /R /Y /I
-xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.pdb" "$(PcapPlusPlusHome)\Dist\" /F /R /Y /I
+      <Command>xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.lib" "$(PcapPlusPlusHome)\Dist\$(Platform)\$(Configuration)\" /F /R /Y /I
+xcopy "$(PcapPlusPlusHome)\Packet++\Lib\Packet++.pdb" "$(PcapPlusPlusHome)\Dist\$(Platform)\$(Configuration)\" /F /R /Y /I
 xcopy "$(PcapPlusPlusHome)\Packet++\header\*" "$(PcapPlusPlusHome)\Dist\header" /F /R /Y /I</Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Packet++\header\ArpLayer.h" />
+    <ClInclude Include="..\..\Packet++\header\BgpLayer.h" />
     <ClInclude Include="..\..\Packet++\header\DhcpLayer.h" />
     <ClInclude Include="..\..\Packet++\header\DnsLayer.h" />
     <ClInclude Include="..\..\Packet++\header\DnsLayerEnums.h" />
@@ -216,6 +217,7 @@ xcopy "$(PcapPlusPlusHome)\Packet++\header\*" "$(PcapPlusPlusHome)\Dist\header" 
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\Packet++\src\ArpLayer.cpp" />
+    <ClCompile Include="..\..\Packet++\src\BgpLayer.cpp" />
     <ClCompile Include="..\..\Packet++\src\DhcpLayer.cpp" />
     <ClCompile Include="..\..\Packet++\src\DnsLayer.cpp" />
     <ClCompile Include="..\..\Packet++\src\DnsResource.cpp" />

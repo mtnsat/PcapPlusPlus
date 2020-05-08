@@ -3,7 +3,7 @@
 [![Build Status](https://travis-ci.org/seladb/PcapPlusPlus.svg?branch=master)](https://travis-ci.org/seladb/PcapPlusPlus)
 [![Build status](https://ci.appveyor.com/api/projects/status/4u5ui21ibbevkstc/branch/master?svg=true)](https://ci.appveyor.com/project/seladb/pcapplusplus/branch/master)
 [![Build Status](https://api.cirrus-ci.com/github/seladb/PcapPlusPlus.svg)](https://cirrus-ci.com/github/seladb/PcapPlusPlus)
-[![Coverity Scan Build Status](https://scan.coverity.com/projects/18137/badge.svg)](https://scan.coverity.com/projects/pcapplusplus)
+[![Language grade: C/C++](https://img.shields.io/lgtm/grade/cpp/g/seladb/PcapPlusPlus.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/seladb/PcapPlusPlus/context:cpp)
 <a href="https://twitter.com/intent/follow?screen_name=seladb">
     <img src="https://img.shields.io/twitter/follow/seladb.svg?label=Follow%20PcapPlusPlus" alt="Follow PcapPlusPlus" />
 </a>
@@ -161,10 +161,11 @@ PcapPlusPlus currently supports parsing, editing and creation of packets of the 
 21. Radius
 22. DNS
 23. DHCP
-24. HTTP headers (request & response)
-25. SSL/TLS - parsing only (no editing capabilities)
-26. Packet trailer (a.k.a footer or padding)
-27. Generic payload
+24. BGP (v4)
+25. HTTP headers (request & response)
+26. SSL/TLS - parsing only (no editing capabilities)
+27. Packet trailer (a.k.a footer or padding)
+28. Generic payload
 
 ## DPDK And PF_RING Support
 

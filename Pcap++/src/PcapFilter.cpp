@@ -4,10 +4,8 @@
 #include "Logger.h"
 #include "IPv4Layer.h"
 #include <sstream>
-#if defined(WIN32) || defined(WINx64) //for using ntohl, ntohs, etc.
+#if defined(WINx64)
 #include <winsock2.h>
-#elif LINUX
-#include <in.h>
 #endif
 #include <pcap.h>
 #include "RawPacket.h"
@@ -74,7 +72,7 @@ bool BPFStringFilter::verifyFilter()
 
 	m_program = new bpf_program();
 	LOG_DEBUG("Compiling the filter '%s'", m_filterStr.c_str());
-	if (pcap_compile_nopcap(9000, pcpp::LINKTYPE_ETHERNET, m_program, m_filterStr.c_str(), 1, 0) < 0)
+	if (m_filterStr.empty() || pcap_compile_nopcap(9000, pcpp::LINKTYPE_ETHERNET, m_program, m_filterStr.c_str(), 1, 0) < 0)
 	{
 		//Filter not valid so delete member
 		freeProgram();
