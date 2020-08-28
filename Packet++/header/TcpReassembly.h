@@ -78,9 +78,9 @@ namespace pcpp
 struct ConnectionData
 {
 	/** Source IP address */
-	IPAddress* srcIP;
+	IPAddress srcIP;
 	/** Destination IP address */
-	IPAddress* dstIP;
+	IPAddress dstIP;
 	/** Source TCP/UDP port */
 	uint16_t srcPort;
 	/** Destination TCP/UDP port */
@@ -95,34 +95,7 @@ struct ConnectionData
 	/**
 	 * A c'tor for this struct that basically zeros all members
 	 */
-	ConnectionData() : srcIP(NULL), dstIP(NULL), srcPort(0), dstPort(0), flowKey(0), startTime(), endTime()  {}
-
-	/**
-	 * A d'tor for this strcut. Notice it frees the memory of srcIP and dstIP members
-	 */
-	~ConnectionData();
-
-	/**
-	 * A copy constructor for this struct. Notice it clones ConnectionData#srcIP and ConnectionData#dstIP
-	 */
-	ConnectionData(const ConnectionData& other);
-
-	/**
-	 * An assignment operator for this struct. Notice it clones ConnectionData#srcIP and ConnectionData#dstIP
-	 */
-	ConnectionData& operator=(const ConnectionData& other);
-
-	/**
-	 * Set source IP
-	 * @param[in] sourceIP A pointer to the source IP to set. Notice the IPAddress object will be cloned
-	 */
-	void setSrcIpAddress(const IPAddress* sourceIP) { srcIP = sourceIP->clone(); }
-
-	/**
-	 * Set destination IP
-	 * @param[in] destIP A pointer to the destination IP to set. Notice the IPAddress object will be cloned
-	 */
-	void setDstIpAddress(const IPAddress* destIP) { dstIP = destIP->clone(); }
+	ConnectionData() : srcPort(0), dstPort(0), flowKey(0), startTime(), endTime()  {}
 
 	/**
 	 * Set startTime of Connection
@@ -135,10 +108,6 @@ struct ConnectionData
 	 * @param[in] endTime integer value
 	 */
 	void setEndTime(const timeval &endTime) { this->endTime = endTime; }
-
-private:
-
-	void copyData(const ConnectionData& other);
 };
 
 
@@ -241,6 +210,68 @@ public:
 	};
 
 	/**
+	 * An enum for providing reassembly status for each processed packet
+	 */
+	enum ReassemblyStatus 
+	{
+		/** 
+		 * The processed packet contains valid TCP payload, and its payload is processed by `OnMessageReadyCallback` callback function.
+		 * The packet may be:
+		 * 1. An in-order TCP packet, meaning `packet_sequence == sequence_expected`. 
+		 *    Note if there's any buffered out-of-order packet waiting for this packet, their associated callbacks are called in this `reassemblePacket` call.
+		 * 2. An out-of-order TCP packet which satisfy `packet_sequence < sequence_expected && packet_sequence + packet_payload_length > sequence_expected`. 
+		 *    Note only the new data (the `[sequence_expected, packet_sequence + packet_payload_length]` part ) is processed by `OnMessageReadyCallback` callback funtion.
+		 */
+		TcpMessageHandled,
+		/** 
+		 * The processed packet is an out-of-order TCP packet, meaning `packet_sequence > sequence_expected`. It's buffered so no `OnMessageReadyCallback` callback function is called. 
+		 * The callback function for this packet maybe called LATER, under different circumstances:
+		 * 1. When an in-order packet which is right before this packet arrives(case 1 and case 2 described in `TcpMessageHandled` section above).
+		 * 2. When a FIN or RST packet arrives, which will clear the buffered out-of-order packets of this side. 
+		 *    If this packet contains "new data", meaning `(packet_sequence <= sequence_expected) && (packet_sequence + packet_payload_length > sequence_expected)`, the new data is processed by `OnMessageReadyCallback` callback.
+		 */
+		OutOfOrderTcpMessageBuffered,
+		/** 
+		 * The processed packet is a FIN or RST packet with no payload. 
+		 * Buffered out-of-order packets will be cleared. 
+		 * If they contain "new data", the new data is processed by `OnMessageReadyCallback` callback.
+		 */
+		FIN_RSTWithNoData,
+		/** 
+		 * The processed packet is not a SYN/SYNACK/FIN/RST packet and has no payload. 
+		 * Normally it's just a bare ACK packet.
+		 * It's ignored and no callback function is called.  
+		 */
+		Ignore_PacketWithNoData,
+		/** 
+		 * The processed packet comes from a closed flow(an in-order FIN or RST is seen). 
+		 * It's ignored and no callback function is called. 
+		 */
+		Ignore_PacketOfClosedFlow,
+		/** 
+		 * The processed packet is a restransmission packet with no new data, meaning the `packet_sequence + packet_payload_length < sequence_expected`.
+		 * It's ignored and no callback function is called. 
+		 */
+		Ignore_Retransimission,
+		/** 
+		 * The processed packet is not an IP packet. 
+		 * It's ignored and no callback function is called. 
+		 */
+		NonIpPacket,
+		/** 
+		 * The processed packet is not a TCP packet. 
+		 * It's ignored and no callback function is called. 
+		 */
+		NonTcpPacket,
+		/** 
+		 * The processed packet does not belong to any known TCP connection. 
+		 * It's ignored and no callback function is called. 
+		 * Normally this will be happen.
+		 */
+		Error_PacketDoesNotMatchFlow,
+	};
+
+	/**
 	 * The type for storing the connection information
 	 */
 	typedef std::map<uint32_t, ConnectionData> ConnectionInfoList;
@@ -252,7 +283,7 @@ public:
 	 * @param[in] tcpData The TCP data itself + connection information
 	 * @param[in] userCookie A pointer to the cookie provided by the user in TcpReassembly c'tor (or NULL if no cookie provided)
 	 */
-	typedef void (*OnTcpMessageReady)(int side, const TcpStreamData& tcpData, void* userCookie);
+	typedef void (*OnTcpMessageReady)(int8_t side, const TcpStreamData& tcpData, void* userCookie);
 
 	/**
 	 * @typedef OnTcpConnectionStart
@@ -282,24 +313,20 @@ public:
 	TcpReassembly(OnTcpMessageReady onMessageReadyCallback, void* userCookie = NULL, OnTcpConnectionStart onConnectionStartCallback = NULL, OnTcpConnectionEnd onConnectionEndCallback = NULL, const TcpReassemblyConfiguration &config = TcpReassemblyConfiguration());
 
 	/**
-	 * A d'tor for this class. Frees all internal structures. Notice that if the d'tor is called while connections are still open, all data is lost and TcpReassembly#OnTcpConnectionEnd won't
-	 * be called for those connections
-	 */
-	~TcpReassembly();
-
-	/**
 	 * The most important method of this class which gets a packet from the user and processes it. If this packet opens a new connection, ends a connection or contains new data on an
 	 * existing connection, the relevant callback will be called (TcpReassembly#OnTcpMessageReady, TcpReassembly#OnTcpConnectionStart, TcpReassembly#OnTcpConnectionEnd)
 	 * @param[in] tcpData A reference to the packet to process
+	 * @return A enum of `TcpReassembly::ReassemblyStatus`, indicating status of TCP reassembly
 	 */
-	void reassemblePacket(Packet& tcpData);
+	ReassemblyStatus reassemblePacket(Packet& tcpData);
 
 	/**
 	 * The most important method of this class which gets a raw packet from the user and processes it. If this packet opens a new connection, ends a connection or contains new data on an
 	 * existing connection, the relevant callback will be invoked (TcpReassembly#OnTcpMessageReady, TcpReassembly#OnTcpConnectionStart, TcpReassembly#OnTcpConnectionEnd)
 	 * @param[in] tcpRawData A reference to the raw packet to process
+	 * @return A enum of `TcpReassembly::ReassemblyStatus`, indicating status of TCP reassembly
 	 */
-	void reassemblePacket(RawPacket* tcpRawData);
+	ReassemblyStatus reassemblePacket(RawPacket* tcpRawData);
 
 	/**
 	 * Close a connection manually. If the connection doesn't exist or already closed an error log is printed. This method will cause the TcpReassembly#OnTcpConnectionEnd to be invoked with
@@ -341,36 +368,33 @@ private:
 		size_t dataLength;
 		uint8_t* data;
 
-		TcpFragment() { sequence = 0; dataLength = 0; data = NULL; }
-		~TcpFragment() { if (data != NULL) delete [] data; }
+		TcpFragment() : sequence(0), dataLength(0), data(NULL) {}
+		~TcpFragment() { delete [] data; }
 	};
 
 	struct TcpOneSideData
 	{
-		IPAddress* srcIP;
+		IPAddress srcIP;
 		uint16_t srcPort;
 		uint32_t sequence;
 		PointerVector<TcpFragment> tcpFragmentList;
 		bool gotFinOrRst;
 
-		void setSrcIP(IPAddress* sourrcIP);
-
-		TcpOneSideData() { srcIP = NULL; srcPort = 0; sequence = 0; gotFinOrRst = false; }
-
-		~TcpOneSideData() { if (srcIP != NULL) delete srcIP; }
+		TcpOneSideData() : srcPort(0), sequence(0), gotFinOrRst(false) {}
 	};
 
 	struct TcpReassemblyData
 	{
-		int numOfSides;
-		int prevSide;
+		bool closed;
+		int8_t numOfSides;
+		int8_t prevSide;
 		TcpOneSideData twoSides[2];
 		ConnectionData connData;
 
-		TcpReassemblyData() { numOfSides = 0; prevSide = -1; }
+		TcpReassemblyData() : closed(false), numOfSides(0), prevSide(-1) {}
 	};
 	
-	typedef std::map<uint32_t, TcpReassemblyData *> ConnectionList;
+	typedef std::map<uint32_t, TcpReassemblyData> ConnectionList;
 	typedef std::map<time_t, std::list<uint32_t> > CleanupList;
 
 	OnTcpMessageReady m_OnMessageReadyCallback;
@@ -385,11 +409,9 @@ private:
 	uint32_t m_MaxNumToClean;
 	time_t m_PurgeTimepoint;
 
-	void checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int sideIndex, bool cleanWholeFragList);
+	void checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, bool cleanWholeFragList);
 
-	std::string prepareMissingDataMessage(uint32_t missingDataLen);
-
-	void handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int sideIndex, uint32_t flowKey);
+	void handleFinOrRst(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, uint32_t flowKey);
 
 	void closeConnectionInternal(uint32_t flowKey, ConnectionEndReason reason);
 

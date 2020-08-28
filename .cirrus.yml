@@ -5,7 +5,9 @@ task:
       image_family: freebsd-11-3-snap
       image_family: freebsd-12-1-snap
   update_script: pkg update -f
-  install_script: pkg install -y libpcap bash gsed gmake
+  install_script: 
+    - pkg install -y libpcap bash gsed gmake py37-pip
+    - python -m pip install -r Tests/ExamplesTest/requirements.txt
   configure_script:
     - ./configure-freebsd.sh --default
   build_script:
@@ -13,6 +15,8 @@ task:
   test_script:
     - cd Tests/Packet++Test && Bin/Packet++Test
     - cd ../Pcap++Test && sudo Bin/Pcap++Test -n
+    - source ../../ci/find_ip_freebsd.sh
+    - cd ../ExamplesTest && python -m pytest --interface $NETWORK_IP
 
 task:
   name: Test Zstd Linux
@@ -28,11 +32,23 @@ task:
     - cd ../Pcap++Test && Bin/Pcap++Test -n
 
 task:
-  name: Regression Tests Linux
+  name: Regression Tests Linux (Address Sanitizer)
   container:
     image: seladb/ubuntu1804:latest
   configure_script:
-    - ./configure-fuzzing.sh --default
+    - ./configure-fuzzing.sh --sanitizer address
+    - ldconfig
+  build_script:
+    - make fuzzers
+  test_script:
+    - cd Tests/Fuzzers/RegressionTests && ./run_tests.sh
+
+task:
+  name: Regression Tests Linux (Undefined Behavior Sanitizer)
+  container:
+    image: seladb/ubuntu1804:latest
+  configure_script:
+    - ./configure-fuzzing.sh --sanitizer undefined
     - ldconfig
   build_script:
     - make fuzzers

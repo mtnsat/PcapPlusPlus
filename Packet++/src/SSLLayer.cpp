@@ -13,10 +13,10 @@ namespace pcpp
 // SSLLayer methods
 // ----------------
 
-bool SSLLayer::IsSSLMessage(uint16_t srcPort, uint16_t dstPort, uint8_t* data, size_t dataLen)
+bool SSLLayer::IsSSLMessage(uint16_t srcPort, uint16_t dstPort, uint8_t* data, size_t dataLen, bool ignorePorts)
 {
 	// check the port map first
-	if (!isSSLPort(srcPort) && !isSSLPort(dstPort))
+	if (!ignorePorts && !isSSLPort(srcPort) && !isSSLPort(dstPort))
 		return false;
 
 	if (dataLen < sizeof(ssl_tls_record_layer))
@@ -116,7 +116,7 @@ void SSLLayer::parseNextLayer()
 	if (m_DataLen <= headerLen)
 		return;
 
-	if (SSLLayer::IsSSLMessage(0, 0, m_Data + headerLen, m_DataLen - headerLen))
+	if (SSLLayer::IsSSLMessage(0, 0, m_Data + headerLen, m_DataLen - headerLen, true))
 		m_NextLayer = SSLLayer::createSSLMessage(m_Data + headerLen, m_DataLen - headerLen, this, m_Packet);
 }
 
@@ -197,7 +197,7 @@ SSLAlertLevel SSLAlertLayer::getAlertLevel() const
 SSLAlertDescription SSLAlertLayer::getAlertDescription()
 {
 	if (getAlertLevel() == SSL_ALERT_LEVEL_ENCRYPTED)
-		return SSL_ALERT_ENCRYPRED;
+		return SSL_ALERT_ENCRYPTED;
 
 	uint8_t* pos = m_Data + sizeof(ssl_tls_record_layer) + sizeof(uint8_t);
 	uint8_t alertDesc = *pos;
@@ -231,7 +231,7 @@ SSLAlertDescription SSLAlertLayer::getAlertDescription()
 		return (SSLAlertDescription)alertDesc;
 		break;
 	default:
-		return SSL_ALERT_ENCRYPRED;
+		return SSL_ALERT_ENCRYPTED;
 	}
 }
 

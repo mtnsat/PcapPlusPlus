@@ -80,7 +80,7 @@ void Packet::setRawPacket(RawPacket* rawPacket, bool freeRawPacket, ProtocolType
 		m_LastLayer->m_NextLayer = NULL;
 	}
 
-	if (parseUntil == UnknownProtocol && parseUntilLayer == OsiModelLayerUnknown)
+	if (m_LastLayer != NULL && parseUntil == UnknownProtocol && parseUntilLayer == OsiModelLayerUnknown)
 	{
 		// find if there is data left in the raw packet that doesn't belong to any layer. In that case it's probably a packet trailer.
 		// create a PacketTrailerLayer layer and add it at the end of the packet
@@ -536,9 +536,11 @@ bool Packet::extendLayer(Layer* layer, int offsetInLayer, size_t numOfBytesToExt
 
 	// insert layer data to raw packet
 	int indexToInsertData = layer->m_Data + offsetInLayer - m_RawPacket->getRawData();
-	uint8_t* tempData = new uint8_t[numOfBytesToExtend];
-	m_RawPacket->insertData(indexToInsertData, tempData, numOfBytesToExtend);
-	delete[] tempData;
+	// passing NULL to insertData will move the data by numOfBytesToExtend
+	// no new data has to be created for this insertion which saves at least little time
+	// this move operation occurs on already allocated memory, which is backed by the reallocation if's provided above
+	// if offsetInLayer == layer->getHeaderLen() insertData will not move any data but only increase the packet size by numOfBytesToExtend
+	m_RawPacket->insertData(indexToInsertData, NULL, numOfBytesToExtend);
 
 	// re-calculate all layers data ptr and data length
 	const uint8_t* dataPtr = m_RawPacket->getRawData();
@@ -676,6 +678,12 @@ std::string Packet::printPacketInfo(bool timeAsLocalTime) const
 
 Layer* Packet::createFirstLayer(LinkLayerType linkType)
 {
+	size_t rawDataLen = (size_t)m_RawPacket->getRawDataLen();
+	if (rawDataLen == 0)
+		return NULL;
+
+	const uint8_t* rawData = m_RawPacket->getRawData();
+
 	if (linkType == LINKTYPE_ETHERNET)
 	{
 		// In order to distinguish between Ethernet II and IEEE 802.3 Ethernet the common method is
@@ -684,9 +692,6 @@ Layer* Packet::createFirstLayer(LinkLayerType linkType)
 		// it means the value is an Ether Type which belongs to Ethernet II.
 		// You can read more in this link:
 		// https://www.ibm.com/support/pages/ethernet-version-2-versus-ieee-8023-ethernet
-
-		size_t rawDataLen = (size_t)m_RawPacket->getRawDataLen();
-		const uint8_t* rawData = m_RawPacket->getRawData();
 		if (rawDataLen >= sizeof(ether_header))
 		{
 			uint16_t ethTypeOrLength = be16toh(*(uint16_t*)(rawData + 12));
@@ -694,37 +699,50 @@ Layer* Packet::createFirstLayer(LinkLayerType linkType)
 			{
 				return new EthDot3Layer((uint8_t*)rawData, rawDataLen, this);
 			}
+			else
+			{
+				return new EthLayer((uint8_t*)rawData, rawDataLen, this);
+			}	
 		}
-		
-		return new EthLayer((uint8_t*)rawData, rawDataLen, this);
+		else // rawDataLen is too small for Eth packet
+		{
+			return new PayloadLayer((uint8_t*)rawData, rawDataLen, NULL, this);
+		}
 	}
 	else if (linkType == LINKTYPE_LINUX_SLL)
 	{
-		return new SllLayer((uint8_t*)m_RawPacket->getRawData(), m_RawPacket->getRawDataLen(), this);
+		return new SllLayer((uint8_t*)rawData, rawDataLen, this);
 	}
 	else if (linkType == LINKTYPE_NULL)
 	{
-		return new NullLoopbackLayer((uint8_t*)m_RawPacket->getRawData(), m_RawPacket->getRawDataLen(), this);
+		if (rawDataLen >= sizeof(uint32_t))
+			return new NullLoopbackLayer((uint8_t*)rawData, rawDataLen, this);
+		else // rawDataLen is too small fir Null/Loopback
+			return new PayloadLayer((uint8_t*)rawData, rawDataLen, NULL, this);
 	}
 	else if (linkType == LINKTYPE_RAW || linkType == LINKTYPE_DLT_RAW1 || linkType == LINKTYPE_DLT_RAW2)
 	{
-		uint8_t ipVer = m_RawPacket->getRawData()[0] & 0xf0;
+		uint8_t ipVer = rawData[0] & 0xf0;
 		if (ipVer == 0x40)
 		{
-			return new IPv4Layer((uint8_t*)m_RawPacket->getRawData(), m_RawPacket->getRawDataLen(), NULL, this);
+			return IPv4Layer::isDataValid(rawData, rawDataLen)
+				? static_cast<Layer*>(new IPv4Layer((uint8_t*)rawData, rawDataLen, NULL, this))
+				: static_cast<Layer*>(new PayloadLayer((uint8_t*)rawData, rawDataLen, NULL, this));
 		}
 		else if (ipVer == 0x60)
 		{
-			return new IPv6Layer((uint8_t*)m_RawPacket->getRawData(), m_RawPacket->getRawDataLen(), NULL, this);
+			return IPv6Layer::isDataValid(rawData, rawDataLen)
+				? static_cast<Layer*>(new IPv6Layer((uint8_t*)rawData, rawDataLen, NULL, this))
+				: static_cast<Layer*>(new PayloadLayer((uint8_t*)rawData, rawDataLen, NULL, this));
 		}
 		else
 		{
-			return new PayloadLayer((uint8_t*)m_RawPacket->getRawData(), m_RawPacket->getRawDataLen(), NULL, this);
+			return new PayloadLayer((uint8_t*)rawData, rawDataLen, NULL, this);
 		}
 	}
 
 	// unknown link type
-	return new EthLayer((uint8_t*)m_RawPacket->getRawData(), m_RawPacket->getRawDataLen(), this);
+	return new PayloadLayer((uint8_t*)rawData, rawDataLen, NULL, this);
 }
 
 std::string Packet::toString(bool timeAsLocalTime)

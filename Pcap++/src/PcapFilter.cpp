@@ -18,21 +18,21 @@ bool GeneralFilter::matchPacketWithFilter(RawPacket* rawPacket)
 {
 	std::string filterStr;
 	parseToString(filterStr);
-
-	if (m_program == NULL || m_lastProgramString != filterStr)
+	if (m_Program == NULL || m_LastProgramString != filterStr || m_LastLinkLayerType != rawPacket->getLinkLayerType())
 	{
 		freeProgram();
 
-		m_program = new bpf_program();
+		m_Program = new bpf_program();
 
 		LOG_DEBUG("Compiling the filter '%s'", filterStr.c_str());
-		if (pcap_compile_nopcap(9000, pcpp::LINKTYPE_ETHERNET, m_program, filterStr.c_str(), 1, 0) < 0)
+		if (pcap_compile_nopcap(9000, rawPacket->getLinkLayerType(), m_Program, filterStr.c_str(), 1, 0) < 0)
 		{
 			//Filter not valid so delete member
 			freeProgram();
 			return false;
 		}
-		m_lastProgramString = filterStr;
+		m_LastProgramString = filterStr;
+		m_LastLinkLayerType = rawPacket->getLinkLayerType();
 	}
 
 	struct pcap_pkthdr pktHdr;
@@ -41,17 +41,17 @@ bool GeneralFilter::matchPacketWithFilter(RawPacket* rawPacket)
 	timespec ts = rawPacket->getPacketTimeStamp();
 	TIMESPEC_TO_TIMEVAL(&pktHdr.ts, &ts);
 
-	return (pcap_offline_filter(m_program, &pktHdr, rawPacket->getRawData()) != 0);
+	return (pcap_offline_filter(m_Program, &pktHdr, rawPacket->getRawData()) != 0);
 }
 
 void GeneralFilter::freeProgram()
 {
-	if (m_program)
+	if (m_Program)
 	{
-		pcap_freecode(m_program);
-		delete m_program;
-		m_program = NULL;
-		m_lastProgramString.clear();
+		pcap_freecode(m_Program);
+		delete m_Program;
+		m_Program = NULL;
+		m_LastProgramString.clear();
 	}
 }
 
@@ -59,7 +59,7 @@ void GeneralFilter::freeProgram()
 void BPFStringFilter::parseToString(std::string& result)
 {
 	if (verifyFilter())
-		result = m_filterStr;
+		result = m_FilterStr;
 	else
 		result.clear();
 }
@@ -67,18 +67,18 @@ void BPFStringFilter::parseToString(std::string& result)
 bool BPFStringFilter::verifyFilter()
 {
 	//If filter has been built before it must be valid
-	if (m_program)
+	if (m_Program)
 		return true;
 
-	m_program = new bpf_program();
-	LOG_DEBUG("Compiling the filter '%s'", m_filterStr.c_str());
-	if (m_filterStr.empty() || pcap_compile_nopcap(9000, pcpp::LINKTYPE_ETHERNET, m_program, m_filterStr.c_str(), 1, 0) < 0)
+	m_Program = new bpf_program();
+	LOG_DEBUG("Compiling the filter '%s'", m_FilterStr.c_str());
+	if (m_FilterStr.empty() || pcap_compile_nopcap(9000, m_LastLinkLayerType, m_Program, m_FilterStr.c_str(), 1, 0) < 0)
 	{
 		//Filter not valid so delete member
 		freeProgram();
 		return false;
 	}
-	m_lastProgramString = m_filterStr;
+	m_LastProgramString = m_FilterStr;
 
 	return true;
 }
@@ -153,7 +153,7 @@ void IPFilter::convertToIPAddressWithMask(std::string& ipAddrmodified, std::stri
 	ipAddrmodified = IPv4Address(addrAsIntAfterMask).toString();
 }
 
-void IPFilter::convertToIPAddressWithLen(std::string& ipAddrmodified, int& len) const
+void IPFilter::convertToIPAddressWithLen(std::string& ipAddrmodified) const
 {
 	if (m_Len == 0)
 		return;
@@ -162,39 +162,19 @@ void IPFilter::convertToIPAddressWithLen(std::string& ipAddrmodified, int& len) 
 
 	// The following code lines verify IP address is valid (IPv4 or IPv6)
 
-	IPAddress::Ptr_t ipAddr = IPAddress::fromString(ipAddrmodified);
-	if (ipAddr.get()->getType() == IPAddress::IPv4AddressType)
+	IPAddress ipAddr = IPAddress(ipAddrmodified);
+	if (!ipAddr.isValid())
 	{
-		IPv4Address* ip4Addr = (IPv4Address*)ipAddr.get();
-		uint32_t addrAsInt = ip4Addr->toInt();
+		LOG_ERROR("Invalid IP address '%s', setting len to zero", ipAddrmodified.c_str());
+		return;
+	}
+
+	if (ipAddr.getType() == IPAddress::IPv4AddressType)
+	{
+		uint32_t addrAsInt = ipAddr.getIPv4().toInt();
 		uint32_t mask = ((uint32_t) - 1) >> ((sizeof(uint32_t) * 8) - m_Len);
 		addrAsInt &= mask;
 		ipAddrmodified = IPv4Address(addrAsInt).toString();
-	}
-	else if (ipAddr.get()->getType() == IPAddress::IPv6AddressType)
-	{
-		IPv6Address* ip6Addr = (IPv6Address*)ipAddr.get();
-		uint8_t* addrAsArr; size_t addrLen;
-		ip6Addr->copyTo(&addrAsArr, addrLen);
-		uint64_t addrLowerBytes = (long)addrAsArr;
-		uint64_t addrHigherBytes = (long)(addrAsArr + 8);
-		if (len > (int)(sizeof(uint64_t) * 8))
-		{
-			addrLowerBytes = 0;
-			addrHigherBytes &= (-1 << (len - sizeof(uint64_t)));
-		}
-		else
-		{
-			addrLowerBytes &= (-1 << len);
-		}
-
-		ipAddrmodified = IPv6Address(addrAsArr).toString();
-		delete [] addrAsArr;
-	}
-	else
-	{
-		LOG_ERROR("Invalid IP address '%s', setting len to zero", ipAddrmodified.c_str());
-		len = 0;
 	}
 }
 
@@ -203,9 +183,8 @@ void IPFilter::parseToString(std::string& result)
 	std::string dir;
 	std::string ipAddr = m_Address;
 	std::string mask = m_IPv4Mask;
-	int len = m_Len;
 	convertToIPAddressWithMask(ipAddr, mask);
-	convertToIPAddressWithLen(ipAddr, len);
+	convertToIPAddressWithLen(ipAddr);
 	parseDirection(dir);
 	result = "ip and " + dir + " net " + ipAddr;
 	if (m_IPv4Mask != "")

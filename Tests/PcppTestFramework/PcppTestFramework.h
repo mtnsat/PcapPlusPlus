@@ -1,47 +1,14 @@
 #ifndef PCPP_TEST_FRAMEWORK
 #define PCPP_TEST_FRAMEWORK
 
-#include "memplumber.h"
-#include <string>
-#include <vector>
-#include <sstream>
+#include <stdio.h>
+#include "../../3rdParty/MemPlumber/MemPlumber/memplumber.h"
+#include "PcppTestFrameworkCommon.h"
 
-void __ptfSplitString(const std::string& input, std::vector<std::string>& result)
-{
-    std::istringstream ss(input);
-    std::string token;
-
-	while(std::getline(ss, token, ';')) 
-    {
-		result.push_back(token);
-	}    
-}
-
-bool __ptfCheckTags(std::string tagSet, std::string tagSetToCompareWith, bool emptyTagSetMeansAll)
-{
-    std::vector<std::string> tagSetVec, tagSetToCompareWithVec;
-
-    if (tagSetToCompareWith == "")
-    {
-        return emptyTagSetMeansAll;
-    }
-
-    __ptfSplitString(tagSet, tagSetVec);
-    __ptfSplitString(tagSetToCompareWith, tagSetToCompareWithVec);
-
-    for (std::vector<std::string>::const_iterator tagSetToCompareWithIter = tagSetToCompareWithVec.begin(); tagSetToCompareWithIter != tagSetToCompareWithVec.end(); tagSetToCompareWithIter++)
-    {
-        for (std::vector<std::string>::const_iterator tagSetIter = tagSetVec.begin(); tagSetIter != tagSetVec.end(); tagSetIter++)
-        {
-            if (*tagSetIter == *tagSetToCompareWithIter)
-            {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
+#ifdef PCAPPP_MINGW_ENV
+#define __STDC_FORMAT_MACROS
+#include <inttypes.h>
+#endif // PCAPPP_MINGW_ENV
 
 #define int_PTF_PRINT_FORMAT "%d"
 #define int_PTF_PRINT_TYPE(val) (int)(val)
@@ -55,10 +22,19 @@ bool __ptfCheckTags(std::string tagSet, std::string tagSetToCompareWith, bool em
 #define u32_PTF_PRINT_FORMAT "%u"
 #define u32_PTF_PRINT_TYPE(val) (uint32_t)(val)
 
-#ifndef PCAPPP_MINGW_ENV
-#define size_PTF_PRINT_FORMAT "%zu"
+#if defined(PCAPPP_MINGW_ENV) || defined(_MSC_VER)
+#define u64_PTF_PRINT_FORMAT "%I64u"
+#elif __APPLE__
+#define u64_PTF_PRINT_FORMAT "%llu"
 #else
+#define u64_PTF_PRINT_FORMAT "%lu"
+#endif
+#define u64_PTF_PRINT_TYPE(val) (uint64_t)(val)
+
+#ifdef PCAPPP_MINGW_ENV
 #define size_PTF_PRINT_FORMAT "%u"
+#else
+#define size_PTF_PRINT_FORMAT "%zu"
 #endif
 #define size_PTF_PRINT_TYPE(val) (size_t)(val)
 
@@ -75,148 +51,123 @@ bool __ptfCheckTags(std::string tagSet, std::string tagSetToCompareWith, bool em
 #define object_PTF_PRINT_TYPE(val) #val
 
 
-#define PTF_TEST_CASE(TestName) void TestName(int& ptfResult)
+#define PTF_TEST_CASE(TestName) void TestName(int& ptfResult, bool printVerbose, bool showSkipped)
+
+#define PTF_INTERNAL_RUN(TestName) \
+	TestName(ptfResult, printVerbose, showSkipped); \
+	if (ptfResult == PTF_RESULT_FAILED) { \
+		printf("%-30s: FAILED (%s:%d). Internal test '%s' failed\n", __FUNCTION__, __FILE__, __LINE__, #TestName); \
+		return; \
+	} \
+	else { \
+		ptfResult = PTF_RESULT_PASSED; \
+	}
+
+#define PTF_IS_VERBOSE_MODE printVerbose
 
 #define PTF_TEST_CASE_PASSED \
-    ptfResult = 1; \
-    return
-
-#define PTF_ASSERT(exp, assertFailedFormat, ...) \
-	if (!(exp)) \
-	{ \
-		printf("%-30s: FAILED. assertion failed: " assertFailedFormat "\n", __FUNCTION__, ## __VA_ARGS__); \
-		ptfResult = 0; \
-        return; \
-	}
-
-#define PTF_ASSERT_AND_RUN_COMMAND(exp, command, assertFailedFormat, ...) \
-	if (!(exp)) \
-	{ \
-		printf("%-30s: FAILED. assertion failed: " assertFailedFormat "\n", __FUNCTION__, ## __VA_ARGS__); \
-		command; \
-		ptfResult = 0; \
-        return; \
-	}
+	ptfResult = PTF_RESULT_PASSED; \
+	return
 
 #define PTF_ASSERT_EQUAL(actual, expected, type) \
-    if (actual != expected) { \
-		printf("%-30s: FAILED (line: %d). assert equal failed: actual: " type##_PTF_PRINT_FORMAT " != expected: " type##_PTF_PRINT_FORMAT "\n", __FUNCTION__, __LINE__, type##_PTF_PRINT_TYPE(actual), type##_PTF_PRINT_TYPE(expected)); \
-		ptfResult = 0; \
-        return; \
-    }
-
-#define PTF_ASSERT_BUF_COMPARE(buf1, buf2, size) \
-    if (memcmp(buf1, buf2, size) != 0) { \
-		printf("%-30s: FAILED (line: %d). assert buffer compare failed: %s != %s\n", __FUNCTION__, __LINE__, #buf1, #buf2); \
-		ptfResult = 0; \
-        return; \
-    }
-
-#define PTF_ASSERT_TRUE(exp) \
-    if (!(exp)) { \
-		printf("%-30s: FAILED (line: %d). assert true failed: %s\n", __FUNCTION__, __LINE__, #exp); \
-		ptfResult = 0; \
-        return; \
-    }
-
-#define PTF_ASSERT_FALSE(exp) \
-    if (exp) { \
-		printf("%-30s: FAILED (line: %d). assert false failed: %s\n", __FUNCTION__, __LINE__, #exp); \
-		ptfResult = 0; \
-        return; \
-    }
-
-
-#define PTF_ASSERT_NOT_NULL(exp) \
-    if ((exp) == NULL) \
-    { \
-		printf("%-30s: FAILED (line: %d). assert not null failed: %s is NULL\n", __FUNCTION__, __LINE__, #exp); \
-		ptfResult = 0; \
-        return; \
-    }
-
-#define PTF_ASSERT_NULL(exp) \
-    if ((exp) != NULL) \
-    { \
-		printf("%-30s: FAILED (line: %d). assert null failed: %s is NULL\n", __FUNCTION__, __LINE__, #exp); \
-		ptfResult = 0; \
-        return; \
-    }
-
-#define PTF_TRY(exp, assertFailedFormat, ...) \
-	if (!(exp)) \
-	{ \
-		printf("%s, NON-CRITICAL: " assertFailedFormat "\n", __FUNCTION__, ## __VA_ARGS__); \
+	if (actual != expected) { \
+		printf("%-30s: FAILED (%s:%d). assert equal failed: actual: " type##_PTF_PRINT_FORMAT " != expected: " type##_PTF_PRINT_FORMAT "\n", __FUNCTION__, __FILE__, __LINE__, type##_PTF_PRINT_TYPE(actual), type##_PTF_PRINT_TYPE(expected)); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
 	}
 
-#define PTF_START_RUNNING_TESTS(userTags, configTags) \
-    bool allTestsPassed = true; \
-    std::string userTagsToRun = userTags; \
-    std::string configTagsToRun = configTags; \
-    printf("Start running tests...\n\n")
+#define PTF_ASSERT_NOT_EQUAL(actual, expected, type) \
+	if (actual == expected) { \
+		printf("%-30s: FAILED (%s:%d). assert not equal failed: actual: " type##_PTF_PRINT_FORMAT " == expected: " type##_PTF_PRINT_FORMAT "\n", __FUNCTION__, __FILE__, __LINE__, type##_PTF_PRINT_TYPE(actual), type##_PTF_PRINT_TYPE(expected)); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
 
-#define PTF_RUN_TEST(TestName, tags) \
-    std::string TestName##_tags = std::string(#TestName) + ";" + tags; \
-    int TestName##_result = 1; \
-    if (!__ptfCheckTags(TestName##_tags, userTagsToRun, true)) \
-    { \
-        printf("%-30s: SKIPPED (tags don't match)\n", #TestName ""); \
-    } \
-    else \
-    { \
-        bool runMemLeakCheck = !__ptfCheckTags("skip_mem_leak_check", configTagsToRun, false) && !__ptfCheckTags(TestName##_tags, "skip_mem_leak_check", false); \
-        if (runMemLeakCheck) \
-        { \
-            bool memAllocVerbose = __ptfCheckTags("mem_leak_check_verbose", configTagsToRun, false); \
-            MemPlumber::start(memAllocVerbose); \
-        } \
-        TestName(TestName##_result); \
-        if (runMemLeakCheck) \
-        { \
-            size_t memLeakCount = 0; \
-            uint64_t memLeakSize = 0; \
-            MemPlumber::memLeakCheck(memLeakCount, memLeakSize, true); \
-            MemPlumber::stopAndFreeAllMemory(); \
-            if (memLeakCount > 0 || memLeakSize > 0) \
-            { \
-                TestName##_result = 0; \
-                printf("%-30s: FAILED. Memory leak found! %d objects and %d[bytes] leaked\n", #TestName, (int)memLeakCount, (int)memLeakSize); \
-            } \
-        } \
-        if (TestName##_result == 1) \
-        { \
-            printf("%-30s: PASSED\n", #TestName ""); \
-        } \
-    } \
-    allTestsPassed &= (TestName##_result != 0)
+#define PTF_ASSERT_GREATER_THAN(actual, expected, type) \
+	if (actual <= expected) { \
+		printf("%-30s: FAILED (%s:%d). assert greater than failed: actual: " type##_PTF_PRINT_FORMAT " <= expected: " type##_PTF_PRINT_FORMAT "\n", __FUNCTION__, __FILE__, __LINE__, type##_PTF_PRINT_TYPE(actual), type##_PTF_PRINT_TYPE(expected)); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
 
-#define PTF_SKIP_TEST(why) \
-    printf("%-30s: SKIPPED (%s)\n", __FUNCTION__, why); \
-    ptfResult = -1; \
-    return
+#define PTF_ASSERT_GREATER_OR_EQUAL_THAN(actual, expected, type) \
+	if (actual < expected) { \
+		printf("%-30s: FAILED (%s:%d). assert greater or equal than failed: actual: " type##_PTF_PRINT_FORMAT " < expected: " type##_PTF_PRINT_FORMAT "\n", __FUNCTION__, __FILE__, __LINE__, type##_PTF_PRINT_TYPE(actual), type##_PTF_PRINT_TYPE(expected)); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
 
-#define PTF_END_RUNNING_TESTS \
-    if (allTestsPassed) \
-    { \
-        printf("ALL TESTS PASSED!!\n\n\n"); \
-        return 0; \
-    } \
-    else \
-    { \
-        printf("NOT ALL TESTS PASSED!!\n\n\n"); \
-        return 1; \
-    }
+#define PTF_ASSERT_LOWER_THAN(actual, expected, type) \
+	if (actual >= expected) { \
+		printf("%-30s: FAILED (%s:%d). assert lower than failed: actual: " type##_PTF_PRINT_FORMAT " >= expected: " type##_PTF_PRINT_FORMAT "\n", __FUNCTION__, __FILE__, __LINE__, type##_PTF_PRINT_TYPE(actual), type##_PTF_PRINT_TYPE(expected)); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
 
-bool verboseMode = false;
+#define PTF_ASSERT_LOWER_OR_EQUAL_THAN(actual, expected, type) \
+	if (actual > expected) { \
+		printf("%-30s: FAILED (%s:%d). assert lower or equal than failed: actual: " type##_PTF_PRINT_FORMAT " > expected: " type##_PTF_PRINT_FORMAT "\n", __FUNCTION__, __FILE__, __LINE__, type##_PTF_PRINT_TYPE(actual), type##_PTF_PRINT_TYPE(expected)); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
 
-#define PTF_SET_VERBOSE_MODE(flag) verboseMode = flag
 
-#define PTF_IS_VERBOSE_MODE verboseMode
+#define PTF_ASSERT_BUF_COMPARE(buf1, buf2, size) \
+	if (memcmp(buf1, buf2, size) != 0) { \
+		printf("%-30s: FAILED (%s:%d). assert buffer compare failed: %s != %s\n", __FUNCTION__, __FILE__, __LINE__, #buf1, #buf2); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
+
+#define PTF_ASSERT_TRUE(exp) \
+	if (!(exp)) { \
+		printf("%-30s: FAILED (%s:%d). assert true failed: %s\n", __FUNCTION__, __FILE__, __LINE__, #exp); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
+
+#define PTF_ASSERT_FALSE(exp) \
+	if (exp) { \
+		printf("%-30s: FAILED (%s:%d). assert false failed: %s\n", __FUNCTION__, __FILE__, __LINE__, #exp); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
+
+#define PTF_ASSERT_NOT_NULL(exp) \
+	if ((exp) == NULL) { \
+		printf("%-30s: FAILED (%s:%d). assert not null failed: %s is NULL\n", __FUNCTION__, __FILE__, __LINE__, #exp); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
+
+#define PTF_ASSERT_NULL(exp) \
+	if ((exp) != NULL) { \
+		printf("%-30s: FAILED (%s:%d). assert null failed: %s is not NULL\n", __FUNCTION__, __FILE__, __LINE__, #exp); \
+		ptfResult = PTF_RESULT_FAILED; \
+		return; \
+	}
+
+#define PTF_NON_CRITICAL_EQUAL(actual, expected, type) \
+	if (actual != expected) { \
+		printf("%s: NON-CRITICAL: (%s:%d). actual: " type##_PTF_PRINT_FORMAT " != expected: " type##_PTF_PRINT_FORMAT "\n", __FUNCTION__, __FILE__, __LINE__, type##_PTF_PRINT_TYPE(actual), type##_PTF_PRINT_TYPE(expected)); \
+	}
+
+#define PTF_NON_CRITICAL_TRUE(exp) \
+	if (!exp) { \
+		printf("%s: NON-CRITICAL: (%s:%d). expression is not true: %s\n", __FUNCTION__, __FILE__, __LINE__, #exp); \
+	}
 
 #define PTF_PRINT_VERBOSE(format, ...) do { \
-		if(verboseMode) { \
-			printf(format "\n", ## __VA_ARGS__); \
+		if(printVerbose) { \
+			printf("%-30s: [VERBOSE] " format "\n", __FUNCTION__, ## __VA_ARGS__); \
 		} \
 } while(0)
+
+#define PTF_SKIP_TEST(why) \
+	if (showSkipped) { \
+		printf("%-30s: SKIPPED (%s)\n", __FUNCTION__, why); \
+	} \
+	ptfResult = PTF_RESULT_SKIPPED; \
+	return
 
 #endif // PCPP_TEST_FRAMEWORK

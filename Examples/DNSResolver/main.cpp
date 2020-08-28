@@ -45,8 +45,6 @@ void printUsage() {
 			"    -d dns_server: IPv4 address of DNS server to send the DNS request to. If not set the DNS request will be sent to the gateway\n"
 			"    -g gateway   : IPv4 address of the gateway to send the DNS request to. If not set the default gateway will be chosen\n"
 			"    -t timeout   : How long to wait for a reply (in seconds). Default timeout is 5 seconds\n", AppName::get().c_str());
-
-	exit(0);
 }
 
 
@@ -72,7 +70,7 @@ void listInterfaces()
 	printf("\nNetwork interfaces:\n");
 	for (std::vector<PcapLiveDevice*>::const_iterator iter = devList.begin(); iter != devList.end(); iter++)
 	{
-		std::string defaultGateway = ((*iter)->getDefaultGateway() != IPv4Address::Zero ? (*iter)->getDefaultGateway().toString() : "None");
+		std::string defaultGateway = ((*iter)->getDefaultGateway().isValid() ? (*iter)->getDefaultGateway().toString() : "None");
 
 		printf("    -> Name: '%s'   IP address: %s   Default gateway: %s\n",
 				(*iter)->getName(),
@@ -94,8 +92,8 @@ int main(int argc, char* argv[])
 	bool hostnameProvided = false;
 	std::string interfaceNameOrIP;
 	bool interfaceNameOrIPProvided = false;
-	IPv4Address dnsServerIP = IPv4Address::Zero;
-	IPv4Address gatewayIP = IPv4Address::Zero;
+	IPv4Address dnsServerIP;
+	IPv4Address gatewayIP;
 	int timeoutSec = -1;
 
 	int optionIndex = 0;
@@ -190,7 +188,7 @@ int main(int argc, char* argv[])
 
 		for (std::vector<PcapLiveDevice*>::const_iterator iter = devList.begin(); iter != devList.end(); iter++)
 		{
-			if ((*iter)->getDefaultGateway() != IPv4Address::Zero)
+			if ((*iter)->getDefaultGateway().isValid())
 			{
 				dev = *iter;
 				break;
@@ -209,7 +207,7 @@ int main(int argc, char* argv[])
 	IPv4Address resultIP = NetworkUtils::getInstance().getIPv4Address(hostname, dev, responseTime, dnsTTL, timeoutSec, dnsServerIP, gatewayIP);
 
 	// print resolved IPv4 address if found
-	if (resultIP == IPv4Address::Zero)
+	if (!resultIP.isValid())
 		printf("\nCould not resolve hostname [%s]\n", hostname.c_str());
 	else
 		printf("\nIP address of [%s] is: %s  DNS-TTL=%d  time=%dms\n", hostname.c_str(), resultIP.toString().c_str(), dnsTTL, (int)responseTime);

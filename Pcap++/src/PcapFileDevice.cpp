@@ -139,7 +139,17 @@ bool PcapFileReaderDevice::open()
 		return false;
 	}
 
-	m_PcapLinkLayerType = static_cast<LinkLayerType>(pcap_datalink(m_PcapDescriptor));
+	int linkLayer = pcap_datalink(m_PcapDescriptor);
+	if (!RawPacket::isLinkTypeValid(linkLayer))
+	{
+		LOG_ERROR("Invalid link layer (%d) for reader device filename '%s'", linkLayer, m_FileName);
+		pcap_close(m_PcapDescriptor);
+		m_PcapDescriptor = NULL;
+		m_DeviceOpened = false;
+		return false;
+	}
+
+	m_PcapLinkLayerType = static_cast<LinkLayerType>(linkLayer);
 
 	LOG_DEBUG("Successfully opened file reader device for filename '%s'", m_FileName);
 	m_DeviceOpened = true;
@@ -814,6 +824,15 @@ bool PcapNgFileWriterDevice::open(bool appendMode)
 	LOG_DEBUG("pcap-ng writer device for file '%s' opened successfully", m_FileName);
 	return true;
 
+}
+
+void PcapNgFileWriterDevice::flush()
+{
+	if (!m_DeviceOpened || m_LightPcapNg == NULL)
+		return;
+
+	light_pcapng_flush((light_pcapng_t*)m_LightPcapNg);
+	LOG_DEBUG("File writer flushed to file '%s'", m_FileName);
 }
 
 void PcapNgFileWriterDevice::close()
