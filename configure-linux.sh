@@ -289,7 +289,12 @@ function get_dpdk_version() {
    else
       case $DPDK_PKG in
          ubuntu-bionic|ubuntu-focal)
-            echo $(dpkg-query --showformat='${Version}' --show dpdk | cut -d'.' -f 1,2); 
+            DPKG_QUERY_OUTPUT=$(dpkg-query --showformat='${Version}' --show libdpdk-dev | cut -d'.' -f 1,2);
+            if [[ $DPKG_QUERY_OUTPUT == *"no packages found"* ]]; then
+               echo ""
+            else
+               echo $DPKG_QUERY_OUTPUT
+            fi
             return;;
          *) 
             echo ""; 
@@ -322,6 +327,7 @@ if (( $COMPILE_WITH_DPDK > 0 )) ; then
    # if DPDK ver >= 17.11 concat additional definitions to PcapPlusPlus.mk
    CUR_DPDK_VERSION=$(get_dpdk_version)
    if [[ $CUR_DPDK_VERSION != "" ]] ; then
+      echo "Configuring with DPDK version $CUR_DPDK_VERSION"
       if [ "$(compare_versions $CUR_DPDK_VERSION 17.11)" -eq "1" ] ; then
          cat mk/PcapPlusPlus.mk.dpdk_new >> $PCAPPLUSPLUS_MK
       fi
