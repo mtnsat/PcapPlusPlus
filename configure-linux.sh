@@ -25,6 +25,7 @@ function HELP {
    echo ""
    echo "--dpdk                   --Setup PcapPlusPlus with DPDK. In this case you must also set --dpdk-home"
    echo "--dpdk-home              --Sets DPDK home directoy. Use only when --dpdk is set"
+   echo "--dpdk-pkg               --Sets DPDK package. Use only when --dpdk is set"
    echo ""
    echo "--use-immediate-mode     --Use libpcap immediate mode which enables getting packets as fast as possible (supported on libpcap>=1.5)"
    echo ""
@@ -58,6 +59,7 @@ PF_RING_HOME=""
 # initializing DPDK variables
 COMPILE_WITH_DPDK=0
 DPDK_HOME=""
+DPDK_PKG=""
 HAS_PCAP_IMMEDIATE_MODE=0
 HAS_SET_DIRECTION_ENABLED=0
 
@@ -123,7 +125,7 @@ if [ $NUMARGS -eq 0 ]; then
 else
 
    # these are all the possible switches
-   OPTS=`getopt -o h --long default,pf-ring,pf-ring-home:,dpdk,dpdk-home:,help,use-immediate-mode,set-direction-enabled,install-dir:,libpcap-include-dir:,libpcap-lib-dir:,use-zstd -- "$@"`
+   OPTS=`getopt -o h --long default,pf-ring,pf-ring-home:,dpdk,dpdk-home:,dpdk-pkg,help,use-immediate-mode,set-direction-enabled,install-dir:,libpcap-include-dir:,libpcap-lib-dir:,use-zstd -- "$@"`
 
    # if user put an illegal switch - print HELP and exit
    if [ $? -ne 0 ]; then
@@ -165,6 +167,20 @@ else
             echo "DPDK home directory '$DPDK_HOME' not found. Exiting..."
             exit 1
          fi
+         shift 2 ;;
+
+       # dpdk-pkg switch - set DPDK_PKG and make sure it's supported, otherwise exit
+       --dpdk-pkg)
+         OS_ID=$(grep "ID=" /etc/os-release | head -n1 | cut -d'=' -f 2)
+         OS_CODENAME=$(grep "CODENAME=" /etc/os-release | head -n1 | cut -d'=' -f 2)
+         DPDK_PKG=$OS_ID-$OS_CODENAME
+         case $DPDK_PKG in
+            ubuntu-bionic|ubuntu-focal) 
+               break;;
+            *) 
+               echo "DPDK '$DPDK_PKG' package not supported. Exiting..."; 
+               exit 1;;
+         esac
          shift 2 ;;
 
        # enable libpcap immediate mode
@@ -224,9 +240,9 @@ else
       exit 1
    fi
 
-   # if --dpdk was set, make sure --dpdk-home is also set, otherwise exit with error
-   if [[ $COMPILE_WITH_DPDK > 0 && $DPDK_HOME == "" ]] ; then
-      echo "Switch --dpdk-home wasn't set. Exiting..."
+   # if --dpdk was set, make sure --dpdk-home or dpdk-pkg is also set, otherwise exit with error
+   if [[ $COMPILE_WITH_DPDK > 0 && $DPDK_HOME == "" && $DPDK_PKG == "" ]] ; then
+      echo "Switch --dpdk-home or dpdk-pkg wasn't set. Exiting..."
       exit 1
    fi
 
@@ -265,11 +281,21 @@ if (( $COMPILE_WITH_PF_RING > 0 )) ; then
    sed -i "2s|^|PF_RING_HOME := $PF_RING_HOME\n\n|" $PCAPPLUSPLUS_MK
 fi
 
-
 # function to extract DPDK major + minor version from <DPDK_HOM>/pkg/dpdk.spec file
 # return: DPDK version (major + minor only)
 function get_dpdk_version() {
-   echo $(grep "Version" $DPDK_HOME/pkg/dpdk.spec | cut -d' ' -f2 | cut -d'.' -f 1,2)
+   if [[ $DPDK_HOME != "" ]] ; then
+      echo $(grep "Version" $DPDK_HOME/pkg/dpdk.spec | cut -d' ' -f2 | cut -d'.' -f 1,2)
+   else
+      case $DPDK_PKG in
+         ubuntu-bionic|ubuntu-focal)
+            echo $(dpkg-query --showformat='${Version}' --show dpdk | cut -d'.' -f 1,2); 
+            return;;
+         *) 
+            echo ""; 
+            return;;
+      esac
+   fi
 }
 
 # function to compare between 2 versions (each constructed of major + minor)
@@ -284,12 +310,24 @@ function compare_versions() {
 if (( $COMPILE_WITH_DPDK > 0 )) ; then
 
    # add DPDK definitions to PcapPlusPlus.mk
-   cat mk/PcapPlusPlus.mk.dpdk >> $PCAPPLUSPLUS_MK
+   if [[ $DPDK_HOME != "" ]] ; then
+      cat mk/PcapPlusPlus.mk.dpdk >> $PCAPPLUSPLUS_MK
+   else
+      case $DPDK_PKG in
+         ubuntu-bionic|ubuntu-focal)
+            cat mk/PcapPlusPlus.mk.dpdk_$DPDK_PKG >> $PCAPPLUSPLUS_MK
+      esac
+   fi
 
    # if DPDK ver >= 17.11 concat additional definitions to PcapPlusPlus.mk
    CUR_DPDK_VERSION=$(get_dpdk_version)
-   if [ "$(compare_versions $CUR_DPDK_VERSION 17.11)" -eq "1" ] ; then
-      cat mk/PcapPlusPlus.mk.dpdk_new >> $PCAPPLUSPLUS_MK
+   if [[ $CUR_DPDK_VERSION != "" ]] ; then
+      if [ "$(compare_versions $CUR_DPDK_VERSION 17.11)" -eq "1" ] ; then
+         cat mk/PcapPlusPlus.mk.dpdk_new >> $PCAPPLUSPLUS_MK
+      fi
+   else
+      echo "DPDK version could not be determined. Exiting..."
+      exit 1
    fi
 
    # set USE_DPDK variable in platform.mk
@@ -303,6 +341,19 @@ if (( $COMPILE_WITH_DPDK > 0 )) ; then
 
    # set DPDK home to RTE_SDK variable in PcapPlusPlus.mk
    sed -i "2s|^|RTE_SDK := $DPDK_HOME\n\n|" $PCAPPLUSPLUS_MK
+
+   # set DPDK_INCLUDES variable in platform.mk and PcapPlusPlus.mk
+   DPDK_INCLUDES=""
+   if [[ $DPDK_HOME != "" ]] ; then
+      DPDK_INCLUDES="-I$DPDK_HOME/build/include"
+   else
+      case $DPDK_PKG in
+         ubuntu-bionic|ubuntu-focal)
+            DPDK_INCLUDES="-I/usr/include/dpdk -I/usr/include/x86_64-linux-gnu/dpdk"
+      esac
+   fi
+   echo -e "\n\DPDK_INCLUDES := "$DPDK_INCLUDES >> $PLATFORM_MK
+   sed -i "2s|^|DPDK_INCLUDES := $DPDK_INCLUDES\n\n|" $PCAPPLUSPLUS_MK
 
    # set the setup-dpdk script:
 
