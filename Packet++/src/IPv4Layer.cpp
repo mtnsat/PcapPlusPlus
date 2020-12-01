@@ -8,9 +8,9 @@
 #include "IcmpLayer.h"
 #include "GreLayer.h"
 #include "IgmpLayer.h"
+#include "PacketUtils.h"
 #include <string.h>
 #include <sstream>
-#include "IpUtils.h"
 #include "Logger.h"
 #include "EndianPortable.h"
 
@@ -237,7 +237,7 @@ IPv4Layer& IPv4Layer::operator=(const IPv4Layer& other)
 void IPv4Layer::parseNextLayer()
 {
 	size_t hdrLen = getHeaderLen();
-	if (m_DataLen <= hdrLen)
+	if (m_DataLen <= hdrLen || hdrLen == 0)
 		return;
 
 	iphdr* ipHdr = getIPv4Header();
@@ -271,7 +271,9 @@ void IPv4Layer::parseNextLayer()
 			: static_cast<Layer*>(new PayloadLayer(payload, payloadLen, this, m_Packet));
 		break;
 	case PACKETPP_IPPROTO_ICMP:
-		m_NextLayer = new IcmpLayer(payload, payloadLen, this, m_Packet);
+		m_NextLayer = IcmpLayer::isDataValid(payload, payloadLen)
+			? static_cast<Layer*>(new IcmpLayer(payload, payloadLen, this, m_Packet))
+			: static_cast<Layer*>(new PayloadLayer(payload, payloadLen, this, m_Packet));
 		break;
 	case PACKETPP_IPPROTO_IPIP:
 		ipVersion = *payload >> 4;
@@ -347,7 +349,7 @@ void IPv4Layer::computeCalculateFields()
 	}
 
 	ScalarBuffer<uint16_t> scalar = { (uint16_t*)ipHdr, (size_t)(ipHdr->internetHeaderLength*4) } ;
-	ipHdr->headerChecksum = htobe16(compute_checksum(&scalar, 1));
+	ipHdr->headerChecksum = htobe16(computeChecksum(&scalar, 1));
 }
 
 bool IPv4Layer::isFragment() const

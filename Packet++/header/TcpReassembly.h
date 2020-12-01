@@ -61,6 +61,7 @@
  * - pcpp#TcpReassemblyConfiguration#doNotRemoveConnInfo - if this member is set to false the automatic cleanup mode is applied
  * - pcpp#TcpReassemblyConfiguration#closedConnectionDelay - the value of delay expressed in seconds. The minimum value is 1
  * - pcpp#TcpReassemblyConfiguration#maxNumToClean - to avoid performance overhead when the cleanup is being performed, this parameter is used. It defines the maximum number of items to be removed per one call of pcpp#TcpReassembly#purgeClosedConnections
+ * - pcpp#TcpReassemblyConfiguration#maxOutOfOrderFragments - the maximum number of unmatched fragments to keep per flow before missed fragments are considered lost. A value of 0 means unlimited
  *
  */
 
@@ -126,10 +127,11 @@ public:
 	 * A c'tor for this class that get data from outside and set the internal members
 	 * @param[in] tcpData A pointer to buffer containing the TCP data piece
 	 * @param[in] tcpDataLength The length of the buffer
+	 * @param[in] missingBytes The number of missing bytes due to packet loss.
 	 * @param[in] connData TCP connection information for this TCP data
 	 */
-	TcpStreamData(const uint8_t* tcpData, size_t tcpDataLength, const ConnectionData& connData)
-		: m_Data(tcpData), m_DataLen(tcpDataLength), m_Connection(connData)
+	TcpStreamData(const uint8_t* tcpData, size_t tcpDataLength, size_t missingBytes, const ConnectionData& connData)
+		: m_Data(tcpData), m_DataLen(tcpDataLength), m_MissingBytes(missingBytes), m_Connection(connData)
 	{
 	}
 
@@ -146,6 +148,18 @@ public:
 	size_t getDataLength() const { return m_DataLen; }
 
 	/**
+	 * A getter for missing byte count due to packet loss.
+	 * @return Missing byte count
+	 */
+	size_t getMissingByteCount() const { return m_MissingBytes; }
+
+	/**
+	 * Determine if bytes are missing. getMissingByteCount can be called to determine the number of missing bytes.
+	 * @return true if bytes are missing.
+	 */
+	bool isBytesMissing() const { return getMissingByteCount() > 0; }
+
+	/**
 	 * A getter for the connection data
 	 * @return The const reference to connection data
 	 */
@@ -154,6 +168,7 @@ public:
 private:
 	const uint8_t* m_Data;
 	size_t m_DataLen;
+	size_t m_MissingBytes;
 	const ConnectionData& m_Connection;
 };
 
@@ -177,14 +192,20 @@ struct TcpReassemblyConfiguration
 	 */
 	uint32_t maxNumToClean;
 
+	/** The maximum number of fragments with a non-matching sequence-number to store per connection flow before packets are assumed permanently missed.
+	    If the value is 0, TcpReassembly should keep out of order fragments indefinitely, or until a message from the paired side is seen.
+	 */
+	uint32_t maxOutOfOrderFragments;
+
 	/**
 	 * A c'tor for this struct
 	 * @param[in] removeConnInfo The flag indicating whether to remove the connection data after a connection is closed. The default is true
 	 * @param[in] closedConnectionDelay How long the closed connections will not be cleaned up. The value is expressed in seconds. If it's set to 0 the default value will be used. The default is 5.
 	 * @param[in] maxNumToClean The maximum number of items to be cleaned up per one call of purgeClosedConnections. If it's set to 0 the default value will be used. The default is 30.
+	 * @param[in] maxOutOfOrderFragments The maximum number of unmatched fragments to keep per flow before missed fragments are considered lost. The default is unlimited.
 	 */
-	TcpReassemblyConfiguration(bool removeConnInfo = true, uint32_t closedConnectionDelay = 5, uint32_t maxNumToClean = 30) :
-		removeConnInfo(removeConnInfo), closedConnectionDelay(closedConnectionDelay), maxNumToClean(maxNumToClean)
+	TcpReassemblyConfiguration(bool removeConnInfo = true, uint32_t closedConnectionDelay = 5, uint32_t maxNumToClean = 30, uint32_t maxOutOfOrderFragments = 0) :
+		removeConnInfo(removeConnInfo), closedConnectionDelay(closedConnectionDelay), maxNumToClean(maxNumToClean), maxOutOfOrderFragments(maxOutOfOrderFragments)
 	{
 	}
 };
@@ -407,6 +428,7 @@ private:
 	bool m_RemoveConnInfo;
 	uint32_t m_ClosedConnectionDelay;
 	uint32_t m_MaxNumToClean;
+	size_t m_MaxOutOfOrderFragments;
 	time_t m_PurgeTimepoint;
 
 	void checkOutOfOrderFragments(TcpReassemblyData* tcpReassemblyData, int8_t sideIndex, bool cleanWholeFragList);

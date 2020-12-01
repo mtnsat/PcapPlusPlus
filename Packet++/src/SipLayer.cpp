@@ -4,6 +4,7 @@
 #include "SdpLayer.h"
 #include "PayloadLayer.h"
 #include "Logger.h"
+#include "GeneralUtils.h"
 #include <string.h>
 #include <algorithm>
 #include <stdlib.h>
@@ -287,7 +288,7 @@ SipRequestLayer::SipMethod SipRequestFirstLine::parseMethod(char* data, size_t d
 void SipRequestFirstLine::parseVersion()
 {
 	char* data = (char*)(m_SipRequest->m_Data + m_UriOffset);
-	char* verPos = strstr(data, " SIP/");
+	char* verPos = (char*)cross_platform_memmem(data, m_SipRequest->getDataLen() - m_UriOffset, " SIP/", 5);
 	if (verPos == NULL)
 	{
 		m_Version = "";
@@ -307,7 +308,7 @@ void SipRequestFirstLine::parseVersion()
 	verPos++;
 
 	int endOfVerPos = 0;
-	while (((verPos+endOfVerPos)[0] != '\r') && ((verPos+endOfVerPos)[0] != '\n'))
+	while (((verPos + endOfVerPos) < (char *) (m_SipRequest->m_Data + m_SipRequest->m_DataLen)) && ((verPos+endOfVerPos)[0] != '\r') && ((verPos+endOfVerPos)[0] != '\n'))
 		endOfVerPos++;
 
 	m_Version = std::string(verPos, endOfVerPos);
@@ -461,6 +462,10 @@ std::string SipRequestLayer::toString() const
 	static const int maxLengthToPrint = 120;
 	std::string result = "SIP request, ";
 	int size = m_FirstLine->getSize() - 2; // the -2 is to remove \r\n at the end of the first line
+	if (size <= 0) {
+		result += std::string("CORRUPT DATA");
+		return result;
+	}
 	if (size <= maxLengthToPrint)
 	{
 		char* firstLine = new char[size+1];
@@ -692,6 +697,10 @@ std::string SipResponseLayer::toString() const
 	static const int maxLengthToPrint = 120;
 	std::string result = "SIP response, ";
 	int size = m_FirstLine->getSize() - 2; // the -2 is to remove \r\n at the end of the first line
+	if (size <= 0) {
+		result += std::string("CORRUPT DATA");
+		return result;
+	}
 	if (size <= maxLengthToPrint)
 	{
 		char* firstLine = new char[size+1];
@@ -1258,13 +1267,12 @@ std::string SipResponseFirstLine::parseVersion(char* data, size_t dataLen)
 		return "";
 	}
 
-	char* nextSpace = strchr(data, ' ');
-	if (nextSpace - data > (int)dataLen)
+	char* nextSpace = (char*)memchr(data, ' ', dataLen);
+	if (nextSpace == NULL)
 		return "";
 
 	return std::string(data, nextSpace - data);
 }
-
 
 
 }

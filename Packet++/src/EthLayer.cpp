@@ -57,10 +57,14 @@ void EthLayer::parseNextLayer()
 		m_NextLayer = new VlanLayer(payload, payloadLen, this, m_Packet);
 		break;
 	case PCPP_ETHERTYPE_PPPOES:
-		m_NextLayer = new PPPoESessionLayer(payload, payloadLen, this, m_Packet);
+		m_NextLayer = PPPoESessionLayer::isDataValid(payload, payloadLen)
+			? static_cast<Layer*>(new PPPoESessionLayer(payload, payloadLen, this, m_Packet))
+			: static_cast<Layer*>(new PayloadLayer(payload, payloadLen, this, m_Packet));
 		break;
 	case PCPP_ETHERTYPE_PPPOED:
-		m_NextLayer = new PPPoEDiscoveryLayer(payload, payloadLen, this, m_Packet);
+		m_NextLayer = PPPoEDiscoveryLayer::isDataValid(payload, payloadLen)
+			? static_cast<Layer*>(new PPPoEDiscoveryLayer(payload, payloadLen, this, m_Packet))
+			: static_cast<Layer*>(new PayloadLayer(payload, payloadLen, this, m_Packet));
 		break;
 	case PCPP_ETHERTYPE_MPLS:
 		m_NextLayer = new MplsLayer(payload, payloadLen, this, m_Packet);
@@ -97,6 +101,27 @@ void EthLayer::computeCalculateFields()
 std::string EthLayer::toString() const
 {
 	return "Ethernet II Layer, Src: " + getSourceMac().toString() + ", Dst: " + getDestMac().toString();
+}
+
+bool EthLayer::isDataValid(const uint8_t* data, size_t dataLen)
+{
+	if (dataLen >= sizeof(ether_header))
+	{
+		/**
+		 * Ethertypes: These are 16-bit identifiers appearing as the initial
+		 * two octets after the MAC destination and source (or after a
+		 * tag) which, when considered as an unsigned integer, are equal
+		 * to or larger than 0x0600.
+		 *
+		 * From: https://tools.ietf.org/html/rfc5342#section-2.3.2.1
+		 * More: IEEE Std 802.3 Clause 3.2.6
+		 */
+		return be16toh(*(uint16_t*)(data + 12)) >= (uint16_t)0x0600;
+	}
+	else
+	{
+		return false;
+	}
 }
 
 } // namespace pcpp

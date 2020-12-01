@@ -4,12 +4,12 @@
 #include <fstream>
 #include <algorithm>
 #include "EndianPortable.h"
+#include "SystemUtils.h"
 #include "TcpReassembly.h"
 #include "IPv4Layer.h"
 #include "TcpLayer.h"
 #include "PayloadLayer.h"
 #include "PcapFileDevice.h"
-#include "PlatformSpecificUtils.h"
 
 
 // ~~~~~~~~~~~~~~~~~~
@@ -25,11 +25,12 @@ struct TcpReassemblyStats
 	bool connectionsStarted;
 	bool connectionsEnded;
 	bool connectionsEndedManually;
+	size_t totalMissingBytes;
 	pcpp::ConnectionData connData;
 
 	TcpReassemblyStats() { clear(); }
 
-	void clear() { reassembledData = ""; numOfDataPackets = 0; curSide = -1; numOfMessagesFromSide[0] = 0; numOfMessagesFromSide[1] = 0; connectionsStarted = false; connectionsEnded = false; connectionsEndedManually = false; }
+	void clear() { reassembledData = ""; numOfDataPackets = 0; curSide = -1; numOfMessagesFromSide[0] = 0; numOfMessagesFromSide[1] = 0; connectionsStarted = false; connectionsEnded = false; connectionsEndedManually = false; totalMissingBytes = 0;}
 };
 
 
@@ -69,6 +70,26 @@ static std::string readFileIntoString(std::string fileName)
 }
 
 
+// ~~~~~~~~~~~~~~~~~~~~
+// getPayloadLen()
+// ~~~~~~~~~~~~~~~~~~~~
+
+static size_t getPayloadLen(pcpp::RawPacket& rawPacket)
+{
+	pcpp::Packet packet(&rawPacket);
+
+	pcpp::TcpLayer* tcpLayer = packet.getLayerOfType<pcpp::TcpLayer>();
+	if (tcpLayer == NULL)
+		throw;
+
+	pcpp::IPv4Layer* ipLayer = packet.getLayerOfType<pcpp::IPv4Layer>();
+	if (ipLayer == NULL)
+		throw;
+
+	return be16toh(ipLayer->getIPv4Header()->totalLength)-ipLayer->getHeaderLen()-tcpLayer->getHeaderLen();
+}
+
+
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 // tcpReassemblyMsgReadyCallback()
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -84,6 +105,7 @@ static void tcpReassemblyMsgReadyCallback(int8_t sideIndex, const pcpp::TcpStrea
 		iter = stats.find(tcpData.getConnectionData().flowKey);
 	}
 
+	iter->second.totalMissingBytes += tcpData.getMissingByteCount();
 
 	if (sideIndex != iter->second.curSide)
 	{
@@ -325,25 +347,29 @@ PTF_TEST_CASE(TestTcpReassemblyRetran)
 } // TestTcpReassemblyRetran
 
 
-
 PTF_TEST_CASE(TestTcpReassemblyMissingData)
 {
 	std::string errMsg;
 	std::vector<pcpp::RawPacket> packetStream;
 
 	PTF_ASSERT_TRUE(readPcapIntoPacketVec("PcapExamples/one_tcp_stream.pcap", packetStream, errMsg));
+	size_t expectedLoss = 0;
 
 	// remove 20 bytes from the beginning
 	pcpp::RawPacket missPacket1 = tcpReassemblyAddRetransmissions(packetStream.at(3), 20, 0);
 	packetStream.insert(packetStream.begin() + 4, missPacket1);
 	packetStream.erase(packetStream.begin() + 3);
+	expectedLoss += 20;
 
 	// remove 30 bytes from the end
 	pcpp::RawPacket missPacket2 = tcpReassemblyAddRetransmissions(packetStream.at(20), 0, 1390);
 	packetStream.insert(packetStream.begin() + 21, missPacket2);
 	packetStream.erase(packetStream.begin() + 20);
+	expectedLoss += 30;
 
 	// remove whole packets
+	expectedLoss += getPayloadLen(*(packetStream.begin() + 28));
+	expectedLoss += getPayloadLen(*(packetStream.begin() + 30));
 	packetStream.erase(packetStream.begin() + 28);
 	packetStream.erase(packetStream.begin() + 30);
 
@@ -351,6 +377,7 @@ PTF_TEST_CASE(TestTcpReassemblyMissingData)
 	tcpReassemblyTest(packetStream, tcpReassemblyResults, false, true);
 
 	TcpReassemblyMultipleConnStats::Stats &stats = tcpReassemblyResults.stats;
+	PTF_ASSERT_EQUAL(stats.begin()->second.totalMissingBytes, expectedLoss, int);
 	PTF_ASSERT_EQUAL(stats.size(), 1, size);
 	PTF_ASSERT_EQUAL(stats.begin()->second.numOfDataPackets, 17, int);
 	PTF_ASSERT_EQUAL(stats.begin()->second.numOfMessagesFromSide[0], 2, int);
@@ -922,7 +949,7 @@ PTF_TEST_CASE(TestTcpReassemblyCleanup)
 	PTF_ASSERT_EQUAL(tcpReassembly.isConnectionOpen(iterConn2->second), 0, int);
 	PTF_ASSERT_EQUAL(tcpReassembly.isConnectionOpen(iterConn3->second), 0, int);
 
-	PCAP_SLEEP(3);
+	pcpp::multiPlatformSleep(3);
 
 	tcpReassembly.reassemblePacket(&lastPacket); // automatic cleanup of 1 item
 	PTF_ASSERT_EQUAL(tcpReassembly.getConnectionInformation().size(), 2, size);
@@ -943,6 +970,54 @@ PTF_TEST_CASE(TestTcpReassemblyCleanup)
 	PTF_ASSERT_EQUAL(tcpReassembly.isConnectionOpen(iterConn1->second), -1, int);
 	PTF_ASSERT_EQUAL(tcpReassembly.isConnectionOpen(iterConn2->second), -1, int);
 	PTF_ASSERT_EQUAL(tcpReassembly.isConnectionOpen(iterConn3->second), -1, int);
+} // TestTcpReassemblyCleanup
+
+
+
+PTF_TEST_CASE(TestTcpReassemblyMaxOOOFrags)
+{
+	TcpReassemblyMultipleConnStats results1;
+	TcpReassemblyMultipleConnStats results2;
+	std::string errMsg;
+
+	pcpp::TcpReassemblyConfiguration config1(true, 5, 30);
+	pcpp::TcpReassemblyConfiguration config2(true, 5, 30, 5); // the fourth argument is the max allowed out-of-order fragments, so we only allow 5
+	pcpp::TcpReassembly tcpReassembly1(tcpReassemblyMsgReadyCallback, &results1, tcpReassemblyConnectionStartCallback, tcpReassemblyConnectionEndCallback, config1);
+	pcpp::TcpReassembly tcpReassembly2(tcpReassemblyMsgReadyCallback, &results2, tcpReassemblyConnectionStartCallback, tcpReassemblyConnectionEndCallback, config2);
+
+	std::vector<pcpp::RawPacket> packetStream;
+	PTF_ASSERT_TRUE(readPcapIntoPacketVec("PcapExamples/unidirectional_tcp_stream_with_missing_packet.pcap", packetStream, errMsg));
+
+	for(std::vector<pcpp::RawPacket>::iterator iter = packetStream.begin(); iter != packetStream.end(); iter++)
+	{
+		pcpp::Packet packet(&(*iter));
+		tcpReassembly1.reassemblePacket(packet);
+		tcpReassembly2.reassemblePacket(packet);
+	}
+
+	pcpp::TcpReassembly::ConnectionInfoList managedConnections1 = tcpReassembly1.getConnectionInformation();
+	pcpp::TcpReassembly::ConnectionInfoList managedConnections2 = tcpReassembly2.getConnectionInformation(); // make a copy of list
+	PTF_ASSERT_EQUAL(managedConnections1.size(), 1, size);
+	PTF_ASSERT_EQUAL(managedConnections2.size(), 1, size);
+	PTF_ASSERT_EQUAL(results1.flowKeysList.size(), 1, size);
+	PTF_ASSERT_EQUAL(results2.flowKeysList.size(), 1, size);
+
+	pcpp::TcpReassembly::ConnectionInfoList::const_iterator iterConn1 = managedConnections1.find(results1.flowKeysList[0]);
+	pcpp::TcpReassembly::ConnectionInfoList::const_iterator iterConn2 = managedConnections2.find(results2.flowKeysList[0]);
+	PTF_ASSERT_NOT_EQUAL(iterConn1, managedConnections1.end(), object);
+	PTF_ASSERT_NOT_EQUAL(iterConn2, managedConnections2.end(), object);
+	PTF_ASSERT_EQUAL(tcpReassembly1.isConnectionOpen(iterConn1->second), 1, int);
+	PTF_ASSERT_EQUAL(tcpReassembly2.isConnectionOpen(iterConn2->second), 1, int);
+	PTF_ASSERT_EQUAL(results1.stats.begin()->second.numOfDataPackets, 1, int); // The second data packet is incomplete so we stopped at one
+	PTF_ASSERT_EQUAL(results2.stats.begin()->second.numOfDataPackets, 7, int); // We hit the fragment limit so skipped the missing fragment and continued to the end
+
+	// Close the connections, forcing cleanup
+	tcpReassembly1.closeAllConnections();
+	tcpReassembly2.closeAllConnections();
+
+	// Everything should be processed now
+	PTF_ASSERT_EQUAL(results1.stats.begin()->second.numOfDataPackets, 7, int);
+	PTF_ASSERT_EQUAL(results2.stats.begin()->second.numOfDataPackets, 7, int);
 } // TestTcpReassemblyCleanup
 
 
