@@ -2,14 +2,15 @@
 
 #include "GreLayer.h"
 #include "EthLayer.h"
+#include "EthDot3Layer.h"
 #include "IPv4Layer.h"
 #include "IPv6Layer.h"
 #include "PPPoELayer.h"
 #include "VlanLayer.h"
 #include "MplsLayer.h"
 #include "PayloadLayer.h"
+#include "PacketUtils.h"
 #include "Logger.h"
-#include "IpUtils.h"
 #include "EndianPortable.h"
 
 // ==============
@@ -218,6 +219,20 @@ void GreLayer::parseNextLayer()
 		break;
 	case PCPP_ETHERTYPE_PPP:
 		m_NextLayer = new PPP_PPTPLayer(payload, payloadLen, this, m_Packet);
+		break;
+	case PCPP_ETHERTYPE_ETHBRIDGE:
+		if (EthLayer::isDataValid(payload, payloadLen))
+		{
+			m_NextLayer = new EthLayer(payload, payloadLen, this, m_Packet);
+		}
+		else if (EthDot3Layer::isDataValid(payload, payloadLen))
+		{
+			m_NextLayer = new EthDot3Layer(payload, payloadLen, this, m_Packet);
+		}
+		else
+		{
+			m_NextLayer = new PayloadLayer(payload, payloadLen, this, m_Packet);
+		}
 		break;
 	default:
 		m_NextLayer = new PayloadLayer(payload, payloadLen, this, m_Packet);
@@ -428,7 +443,7 @@ void GREv0Layer::computeCalculateFields()
 	ScalarBuffer<uint16_t> buffer;
 	buffer.buffer = (uint16_t*)m_Data;
 	buffer.len = m_DataLen;
-	size_t checksum = compute_checksum(&buffer, 1);
+	size_t checksum = computeChecksum(&buffer, 1);
 
 	setChecksum(checksum);
 }

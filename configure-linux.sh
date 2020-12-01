@@ -281,11 +281,16 @@ if (( $COMPILE_WITH_PF_RING > 0 )) ; then
    sed -i "2s|^|PF_RING_HOME := $PF_RING_HOME\n\n|" $PCAPPLUSPLUS_MK
 fi
 
-# function to extract DPDK major + minor version from <DPDK_HOM>/pkg/dpdk.spec file
+# function to extract DPDK major + minor version from <DPDK_HOM>/pkg/dpdk.spec file (older DPDK versions)
+# or <DPDK_HOM>/VERSION file (newer DPDK versios)
 # return: DPDK version (major + minor only)
 function get_dpdk_version() {
    if [[ $DPDK_HOME != "" ]] ; then
-      echo $(grep "Version" $DPDK_HOME/pkg/dpdk.spec | cut -d' ' -f2 | cut -d'.' -f 1,2)
+      if [ -f $DPDK_HOME/pkg/dpdk.spec ]; then
+         echo $(grep "Version" $DPDK_HOME/pkg/dpdk.spec | cut -d' ' -f2 | cut -d'.' -f 1,2);
+      else
+         echo $(cat $DPDK_HOME/VERSION | cut -d'.' -f 1,2);
+      fi
    else
       case $DPDK_PKG in
          ubuntu-bionic|ubuntu-focal)
@@ -361,16 +366,13 @@ if (( $COMPILE_WITH_DPDK > 0 )) ; then
    echo -e "\n\DPDK_INCLUDES := "$DPDK_INCLUDES >> $PLATFORM_MK
    sed -i "2s|^|DPDK_INCLUDES := $DPDK_INCLUDES\n\n|" $PCAPPLUSPLUS_MK
 
-   # set the setup-dpdk script:
+   # set the setup_dpdk.py:
 
-   # copy the initial version to PcapPlusPlus root dir
-   cp mk/setup-dpdk.sh.template setup-dpdk.sh
+   # copy to PcapPlusPlus root dir
+   cp mk/setup_dpdk.py .
 
-   # make it an executable
-   chmod +x setup-dpdk.sh
-
-   # replace the RTE_SDK placeholder with DPDK home
-   sed -i "s|###RTE_SDK###|$DPDK_HOME|g" setup-dpdk.sh
+   # create a settings file with RTE_SDK folder
+   echo -e "RTE_SDK=$DPDK_HOME\r" > setup_dpdk_settings.dat
 
 fi
 
