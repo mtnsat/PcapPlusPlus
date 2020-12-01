@@ -1,6 +1,7 @@
 #define LOG_MODULE PacketLogModuleHttpLayer
 
 #include "Logger.h"
+#include "GeneralUtils.h"
 #include "HttpLayer.h"
 #include <string.h>
 #include <algorithm>
@@ -114,6 +115,10 @@ std::string HttpRequestLayer::toString() const
 	static const int maxLengthToPrint = 120;
 	std::string result = "HTTP request, ";
 	int size = m_FirstLine->getSize() - 2; // the -2 is to remove \r\n at the end of the first line
+	if (size <= 0) {
+		result += std::string("CORRUPT DATA");
+		return result;
+	}
 	if (size <= maxLengthToPrint)
 	{
 		char* firstLine = new char[size+1];
@@ -336,7 +341,7 @@ HttpRequestLayer::HttpMethod HttpRequestFirstLine::parseMethod(char* data, size_
 void HttpRequestFirstLine::parseVersion()
 {
 	char* data = (char*)(m_HttpRequest->m_Data + m_UriOffset);
-	char* verPos = strstr(data, " HTTP/");
+	char* verPos = cross_platform_memmem(data, m_HttpRequest->getDataLen() - m_UriOffset, " HTTP/", 6);
 	if (verPos == NULL)
 	{
 		m_Version = HttpVersionUnknown;

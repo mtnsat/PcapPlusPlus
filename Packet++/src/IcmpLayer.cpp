@@ -3,7 +3,7 @@
 #include "IcmpLayer.h"
 #include "PayloadLayer.h"
 #include "Packet.h"
-#include "IpUtils.h"
+#include "PacketUtils.h"
 #include "Logger.h"
 #include <sstream>
 #include <string.h>
@@ -605,6 +605,8 @@ size_t IcmpLayer::getHeaderLen() const
 		return sizeof(icmp_param_problem);
 	case ICMP_ROUTER_ADV:
 		routerAdvSize = sizeof(icmp_router_advertisement_hdr) + (getRouterAdvertisementData()->header->advertisementCount*sizeof(icmp_router_address_structure));
+		if (routerAdvSize > m_DataLen)
+			return m_DataLen;
 		return routerAdvSize;
 	default:
 		return sizeof(icmphdr);
@@ -627,7 +629,7 @@ void IcmpLayer::computeCalculateFields()
 	ScalarBuffer<uint16_t> buffer;
 	buffer.buffer = (uint16_t*)getIcmpHeader();
 	buffer.len = icmpLen;
-	size_t checksum = compute_checksum(&buffer, 1);
+	size_t checksum = computeChecksum(&buffer, 1);
 
 	getIcmpHeader()->checksum = htobe16(checksum);
 }

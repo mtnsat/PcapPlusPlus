@@ -59,7 +59,6 @@ ifdef PF_RING_HOME
 	@cd $(EXAMPLE_PF_RING1)          && $(MAKE) PfRingTrafficFilter
 endif
 	@$(MKDIR) -p Dist/examples
-	@$(MKDIR) -p Dist/mk
 	$(CP) $(EXAMPLE_ARPSPOOF)/Bin/* ./Dist/examples
 	$(CP) $(EXAMPLE_ARPING)/Bin/* ./Dist/examples
 	$(CP) $(EXAMPLE_DNSSPOOF)/Bin/* ./Dist/examples
@@ -81,8 +80,7 @@ endif
 ifdef PF_RING_HOME
 	$(CP) $(EXAMPLE_PF_RING1)/Bin/* ./Dist/examples
 endif
-	$(CP) mk/PcapPlusPlus.mk ./Dist/mk
-	@echo 'Finished successfully building PcapPlusPlus'
+	@echo Finished successfully building PcapPlusPlus
 
 # PcapPlusPlus libs only
 libs:
@@ -98,7 +96,9 @@ libs:
 	@$(CP) $(COMMONPP_HOME)/header/* ./Dist/header
 	@$(CP) $(PACKETPP_HOME)/header/* ./Dist/header
 	@$(CP) $(PCAPPP_HOME)/header/* ./Dist/header
-	@echo 'Finished successfully building PcapPlusPlus libs'
+	@$(MKDIR) -p Dist/mk
+	$(CP) mk/PcapPlusPlus.mk ./Dist/mk
+	@echo Finished successfully building PcapPlusPlus libs
 	@echo ' '
 
 # PcapPlusPlus with fuzzers
@@ -136,7 +136,7 @@ ifdef PF_RING_HOME
 endif
 
 	@$(RM) -rf Dist
-	@echo 'Finished successfully cleaning PcapPlusPlus'
+	@echo Finished successfully cleaning PcapPlusPlus
 
 ifndef WIN32
 INSTALL_DIR=Dist
