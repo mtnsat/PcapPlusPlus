@@ -302,7 +302,6 @@ void printUsage()
 			"    -l            : Print the list of interfaces and exit\n"
 			"    -v            : Display the current version and exit\n"
 			"    -h            : Display this help message and exit\n\n", AppName::get().c_str());
-	exit(0);
 }
 
 
@@ -328,7 +327,7 @@ void listInterfaces()
 	printf("\nNetwork interfaces:\n");
 	for (std::vector<PcapLiveDevice*>::const_iterator iter = devList.begin(); iter != devList.end(); iter++)
 	{
-		printf("    -> Name: '%s'   IP address: %s\n", (*iter)->getName(), (*iter)->getIPv4Address().toString().c_str());
+		printf("    -> Name: '%s'   IP address: %s\n", (*iter)->getName().c_str(), (*iter)->getIPv4Address().toString().c_str());
 	}
 	exit(0);
 }
@@ -499,19 +498,19 @@ static void onPacketArrives(RawPacket* packet, PcapLiveDevice* dev, void* tcpRea
 /**
  * The method responsible for TCP reassembly on pcap/pcapng files
  */
-void doTcpReassemblyOnPcapFile(std::string fileName, TcpReassembly& tcpReassembly, std::string bpfFiler = "")
+void doTcpReassemblyOnPcapFile(std::string fileName, TcpReassembly& tcpReassembly, std::string bpfFilter = "")
 {
 	// open input file (pcap or pcapng file)
-	IFileReaderDevice* reader = IFileReaderDevice::getReader(fileName.c_str());
+	IFileReaderDevice* reader = IFileReaderDevice::getReader(fileName);
 
 	// try to open the file device
 	if (!reader->open())
 		EXIT_WITH_ERROR("Cannot open pcap/pcapng file");
 
 	// set BPF filter if set by the user
-	if (!bpfFiler.empty())
+	if (!bpfFilter.empty())
 	{
-		if (!reader->setFilter(bpfFiler))
+		if (!reader->setFilter(bpfFilter))
 			EXIT_WITH_ERROR("Cannot set BPF filter to pcap file");
 	}
 
@@ -541,16 +540,16 @@ void doTcpReassemblyOnPcapFile(std::string fileName, TcpReassembly& tcpReassembl
 /**
  * The method responsible for TCP reassembly on live traffic
  */
-void doTcpReassemblyOnLiveTraffic(PcapLiveDevice* dev, TcpReassembly& tcpReassembly, std::string bpfFiler = "")
+void doTcpReassemblyOnLiveTraffic(PcapLiveDevice* dev, TcpReassembly& tcpReassembly, std::string bpfFilter = "")
 {
 	// try to open device
 	if (!dev->open())
 		EXIT_WITH_ERROR("Cannot open interface");
 
 	// set BPF filter if set by the user
-	if (!bpfFiler.empty())
+	if (!bpfFilter.empty())
 	{
-		if (!dev->setFilter(bpfFiler))
+		if (!dev->setFilter(bpfFilter))
 			EXIT_WITH_ERROR("Cannot set BPF filter to interface");
 	}
 
@@ -629,6 +628,7 @@ int main(int argc, char* argv[])
 				break;
 			case 'h':
 				printUsage();
+				exit(0);
 				break;
 			case 'v':
 				printAppVersion();
@@ -671,20 +671,9 @@ int main(int argc, char* argv[])
 	else // analyze in live traffic mode
 	{
 		// extract pcap live device by interface name or IP address
-		PcapLiveDevice* dev = NULL;
-		IPv4Address interfaceIP(interfaceNameOrIP);
-		if (interfaceIP.isValid())
-		{
-			dev = PcapLiveDeviceList::getInstance().getPcapLiveDeviceByIp(interfaceIP);
-			if (dev == NULL)
-				EXIT_WITH_ERROR("Couldn't find interface by provided IP");
-		}
-		else
-		{
-			dev = PcapLiveDeviceList::getInstance().getPcapLiveDeviceByName(interfaceNameOrIP);
-			if (dev == NULL)
-				EXIT_WITH_ERROR("Couldn't find interface by provided name");
-		}
+		PcapLiveDevice* dev = PcapLiveDeviceList::getInstance().getPcapLiveDeviceByIpOrName(interfaceNameOrIP);
+		if (dev == NULL)
+			EXIT_WITH_ERROR("Couldn't find interface by provided IP address or name");
 
 		// start capturing packets and do TCP reassembly
 		doTcpReassemblyOnLiveTraffic(dev, tcpReassembly, bpfFilter);

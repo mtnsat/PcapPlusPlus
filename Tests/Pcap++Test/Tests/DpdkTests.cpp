@@ -299,7 +299,7 @@ PTF_TEST_CASE(TestDpdkDevice)
 
 	PTF_ASSERT_TRUE(dev->open());
 	DeviceTeardown devTeardown(dev);
-	pcpp::LoggerPP::getInstance().supressErrors();
+	pcpp::LoggerPP::getInstance().suppressErrors();
 	PTF_ASSERT_FALSE(dev->open());
 	pcpp::LoggerPP::getInstance().enableErrors();
 	PTF_ASSERT_EQUAL(dev->getNumOfOpenedRxQueues(), 1, u16);
@@ -377,7 +377,7 @@ PTF_TEST_CASE(TestDpdkMultiThread)
 
 	if (dev->getTotalNumOfRxQueues() > 1)
 	{
-		pcpp::LoggerPP::getInstance().supressErrors();
+		pcpp::LoggerPP::getInstance().suppressErrors();
 		PTF_ASSERT_FALSE(dev->openMultiQueues(numOfRxQueuesToOpen+1, 1));
 		pcpp::LoggerPP::getInstance().enableErrors();
 	}
@@ -386,7 +386,7 @@ PTF_TEST_CASE(TestDpdkMultiThread)
 
 	if (numOfRxQueuesToOpen > 1)
 	{
-		pcpp::LoggerPP::getInstance().supressErrors();
+		pcpp::LoggerPP::getInstance().suppressErrors();
 		DpdkPacketData dummyPacketData;
 		PTF_ASSERT_FALSE(dev->startCaptureSingleThread(dpdkPacketsArrive, &dummyPacketData));
 		pcpp::LoggerPP::getInstance().enableErrors();
@@ -475,14 +475,14 @@ PTF_TEST_CASE(TestDpdkMultiThread)
 					PTF_PRINT_VERBOSE("Same flow exists in core %d and core %d. Flow key = %X", firstCoreId, secondCoreId, iter->first);
 					std::ostringstream stream;
 					stream << "Core" << firstCoreId << "_Flow_" << std::hex << iter->first << ".pcap";
-					pcpp::PcapFileWriterDevice writerDev(stream.str().c_str());
+					pcpp::PcapFileWriterDevice writerDev(stream.str());
 					writerDev.open();
 					writerDev.writePackets(iter->second.first);
 					writerDev.close();
 
 					std::ostringstream stream2;
 					stream2 << "Core" << secondCoreId << "_Flow_" << std::hex << iter->first << ".pcap";
-					pcpp::PcapFileWriterDevice writerDev2(stream2.str().c_str());
+					pcpp::PcapFileWriterDevice writerDev2(stream2.str());
 					writerDev2.open();
 					writerDev2.writePackets(iter->second.second);
 					writerDev2.close();
@@ -526,7 +526,7 @@ PTF_TEST_CASE(TestDpdkDeviceSendPackets)
 	PTF_ASSERT_NOT_NULL(dev);
 	DeviceTeardown devTeardown(dev);
 
-	pcpp::LoggerPP::getInstance().supressErrors();
+	pcpp::LoggerPP::getInstance().suppressErrors();
 	PTF_ASSERT_FALSE(dev->openMultiQueues(1, 255));
 	pcpp::LoggerPP::getInstance().enableErrors();
 
@@ -571,7 +571,7 @@ PTF_TEST_CASE(TestDpdkDeviceSendPackets)
 		PTF_ASSERT_EQUAL(packetsSentAsRawVector, packetsRead, u16);
 	}
 
-	pcpp::LoggerPP::getInstance().supressErrors();
+	pcpp::LoggerPP::getInstance().suppressErrors();
 	PTF_ASSERT_EQUAL(dev->sendPackets(rawPacketVec, dev->getTotalNumOfTxQueues()+1), 0, u16);
 	pcpp::LoggerPP::getInstance().enableErrors();
 
@@ -606,7 +606,7 @@ PTF_TEST_CASE(TestDpdkDeviceWorkerThreads)
 
 	// negative tests
 	// --------------
-	pcpp::LoggerPP::getInstance().supressErrors();
+	pcpp::LoggerPP::getInstance().suppressErrors();
 	PTF_ASSERT_EQUAL(dev->receivePackets(rawPacketVec, 0), 0, u16);
 	PTF_ASSERT_EQUAL(dev->receivePackets(packetArr, packetArrLen, 0), 0, u16);
 	PTF_ASSERT_EQUAL(dev->receivePackets(mBufRawPacketArr, mBufRawPacketArrLen, 0), 0, u16);
@@ -632,12 +632,25 @@ PTF_TEST_CASE(TestDpdkDeviceWorkerThreads)
 	// receive packets to packet vector
 	// --------------------------------
 	int numOfAttempts = 0;
+	int numOfRxQueues = dev->getTotalNumOfRxQueues();
+	int rxQueueId = 0;
+	bool isPacketRecvd = false;
 	while (numOfAttempts < 20)
 	{
-		dev->receivePackets(rawPacketVec, 0);
-		pcpp::multiPlatformSleep(1);
-		if (rawPacketVec.size() > 0)
+		while (rxQueueId < numOfRxQueues)
+		{
+			dev->receivePackets(rawPacketVec, rxQueueId);
+			pcpp::multiPlatformSleep(1);
+			if (rawPacketVec.size() > 0)
+			{
+				isPacketRecvd = true;
+				break;
+			}
+			++rxQueueId;
+		}
+		if (isPacketRecvd)
 			break;
+
 		numOfAttempts++;
 	}
 
@@ -647,11 +660,22 @@ PTF_TEST_CASE(TestDpdkDeviceWorkerThreads)
 	// receive packets to mbuf array
 	// -----------------------------
 	numOfAttempts = 0;
+	isPacketRecvd = false;
+	rxQueueId = 0;
 	while (numOfAttempts < 20)
 	{
-		mBufRawPacketArrLen = dev->receivePackets(mBufRawPacketArr, 32, 0);
-		pcpp::multiPlatformSleep(1);
-		if (mBufRawPacketArrLen > 0)
+		while (rxQueueId < numOfRxQueues)
+		{
+			mBufRawPacketArrLen = dev->receivePackets(mBufRawPacketArr, 32, rxQueueId);
+			pcpp::multiPlatformSleep(1);
+			if (mBufRawPacketArrLen > 0)
+			{
+				isPacketRecvd = true;
+				break;
+			}
+			++rxQueueId;
+		}
+		if (isPacketRecvd)
 			break;
 		numOfAttempts++;
 	}
@@ -668,11 +692,22 @@ PTF_TEST_CASE(TestDpdkDeviceWorkerThreads)
 	// receive packets to packet array
 	// -------------------------------
 	numOfAttempts = 0;
+	isPacketRecvd = false;
+	rxQueueId = 0;
 	while (numOfAttempts < 20)
 	{
-		packetArrLen = dev->receivePackets(packetArr, 32, 0);
-		pcpp::multiPlatformSleep(1);
-		if (packetArrLen > 0)
+		while (rxQueueId < numOfRxQueues)
+		{
+			packetArrLen = dev->receivePackets(packetArr, 32, rxQueueId);
+			pcpp::multiPlatformSleep(1);
+			if (packetArrLen > 0)
+			{
+				isPacketRecvd = true;
+				break;
+			}
+			++rxQueueId;
+		}
+		if (isPacketRecvd)
 			break;
 		numOfAttempts++;
 	}
@@ -688,7 +723,6 @@ PTF_TEST_CASE(TestDpdkDeviceWorkerThreads)
 
 	// test worker threads
 	// -------------------
-	int numOfRxQueues = dev->getTotalNumOfRxQueues();
 	pthread_mutex_t queueMutexArr[numOfRxQueues];
 	for (int i = 0; i < numOfRxQueues; i++)
 		pthread_mutex_init(&queueMutexArr[i], NULL);
@@ -709,7 +743,7 @@ PTF_TEST_CASE(TestDpdkDeviceWorkerThreads)
 	}
 	PTF_PRINT_VERBOSE("Initiating %d worker threads", (int)workerThreadVec.size());
 
-	pcpp::LoggerPP::getInstance().supressErrors();
+	pcpp::LoggerPP::getInstance().suppressErrors();
 	// negative test - start worker thread with core mask 0
 	PTF_ASSERT_FALSE(pcpp::DpdkDeviceList::getInstance().startDpdkWorkerThreads(0, workerThreadVec));
 	pcpp::LoggerPP::getInstance().enableErrors();
@@ -844,7 +878,7 @@ PTF_TEST_CASE(TestDpdkMbufRawPacket)
 		bool foundTcpOrUdpPacket = false;
 		for (int i = 0; i < dev->getNumOfOpenedRxQueues(); i++)
 		{
-			dev->receivePackets(rawPacketVec, 0);
+			dev->receivePackets(rawPacketVec, i);
 			pcpp::multiPlatformSleep(1);
 			for (pcpp::MBufRawPacketVector::VectorIterator iter = rawPacketVec.begin(); iter != rawPacketVec.end(); iter++)
 			{
