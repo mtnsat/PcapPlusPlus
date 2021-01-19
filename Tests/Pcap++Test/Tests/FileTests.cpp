@@ -159,11 +159,10 @@ PTF_TEST_CASE(TestPcapSllFileReadWrite)
 
 PTF_TEST_CASE(TestPcapRawIPFileReadWrite)
 {
-	pcpp::LoggerPP::getInstance().supressErrors();
+	pcpp::LoggerPP::getInstance().suppressErrors();
 	pcpp::PcapFileWriterDevice tempWriter(RAW_IP_PCAP_WRITE_PATH, pcpp::LINKTYPE_RAW);
 	PTF_ASSERT_FALSE(tempWriter.open());
 	pcpp::LoggerPP::getInstance().enableErrors();
-
 	pcpp::PcapFileReaderDevice readerDev(RAW_IP_PCAP_PATH);
 	pcpp::PcapFileWriterDevice writerDev(RAW_IP_PCAP_WRITE_PATH, pcpp::LINKTYPE_DLT_RAW1);
 	pcpp::PcapNgFileWriterDevice writerNgDev(RAW_IP_PCAPNG_PATH);
@@ -258,7 +257,7 @@ PTF_TEST_CASE(TestPcapFileAppend)
 
 	PTF_ASSERT_EQUAL(counter, (4631*5), int);
 
-	pcpp::LoggerPP::getInstance().supressErrors();
+	pcpp::LoggerPP::getInstance().suppressErrors();
 	pcpp::PcapFileWriterDevice writerDev2(EXAMPLE_PCAP_WRITE_PATH, pcpp::LINKTYPE_LINUX_SLL);
 	PTF_ASSERT_FALSE(writerDev2.open(true));
 	pcpp::LoggerPP::getInstance().enableErrors();
@@ -359,7 +358,7 @@ PTF_TEST_CASE(TestPcapNgFileReadWriteAdv)
 
 	// negative tests
 	readerDev.close();
-	pcpp::LoggerPP::getInstance().supressErrors();
+	pcpp::LoggerPP::getInstance().suppressErrors();
 	PTF_ASSERT_EQUAL(readerDev.getOS(), "", string);
 	pcpp::LoggerPP::getInstance().enableErrors();
 	// --------------
