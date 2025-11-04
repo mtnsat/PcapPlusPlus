@@ -581,8 +581,8 @@ namespace pcpp
 		}
 
 		m_Stats.rxDroppedInvalidPackets = socketStats.rx_invalid_descs;
-		m_Stats.rxDroppedRxRingFullPackets = socketStats.rx_ring_full;
-		m_Stats.rxDroppedFillRingPackets = socketStats.rx_fill_ring_empty_descs;
+		// m_Stats.rxDroppedRxRingFullPackets = socketStats.rx_ring_full; // Comment
+		// m_Stats.rxDroppedFillRingPackets = socketStats.rx_fill_ring_empty_descs;
 		m_Stats.rxDroppedTotalPackets = m_Stats.rxDroppedFillRingPackets + m_Stats.rxDroppedRxRingFullPackets +
 		                                m_Stats.rxDroppedInvalidPackets + socketStats.rx_dropped;
 		m_Stats.txDroppedInvalidPackets = socketStats.tx_invalid_descs;
